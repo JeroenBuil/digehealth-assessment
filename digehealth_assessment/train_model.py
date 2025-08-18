@@ -1,6 +1,6 @@
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from preprocessing import (
@@ -11,6 +11,10 @@ from preprocessing import (
 from config import EXTERNAL_DATA_DIR
 from pathlib import Path
 from imblearn.over_sampling import SMOTE
+from imblearn.under_sampling import RandomUnderSampler
+from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline
+import matplotlib.pyplot as plt
 
 # List of (wav, annotation) file pairs
 file_pairs = [
@@ -39,8 +43,8 @@ for wav_path, ann_path in file_pairs:
     all_labels.extend(labels)
     all_sample_rates.extend([sample_rate] * len(segments))
 
-# Only keep 'b', 'mb', 'h' and 'n' labels, convert all remaining labels to 'n'
-allowed_labels = {"b", "mb", "h", "n"}
+# Only keep 'b', 'mb', 'h', 'n' and silence labels, convert all remaining labels to 'n'
+allowed_labels = {"b", "mb", "h", "n", "silence"}
 all_labels = [label if label in allowed_labels else "n" for label in all_labels]
 
 print("Extracting features from all segments...")
@@ -65,12 +69,69 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 # Count and print all samples in each class after train/test split
 unique_train, counts_train = np.unique(y_train, return_counts=True)
-unique_test, counts_test = np.unique(y_test, return_counts=True)
 print("\nClass distribution in TRAIN set:")
 for label, count in zip(unique_train, counts_train):
     print(f"  {label}: {count}")
-print("\nClass distribution in TEST set:")
-for label, count in zip(unique_test, counts_test):
+
+
+def balance_training_data(X_train, y_train):
+    """
+    Balance the training data using undersampling for majority classes and SMOTE for minority classes.
+    Returns balanced X_train and y_train.
+    """
+    from imblearn.under_sampling import RandomUnderSampler
+    from imblearn.over_sampling import SMOTE
+    from imblearn.pipeline import Pipeline
+    import numpy as np
+
+    unique_train, counts_train = np.unique(y_train, return_counts=True)
+    target_size = int(np.median(counts_train))
+    class_counts = dict(zip(unique_train, counts_train))
+    under_classes = {
+        label: target_size
+        for label, count in class_counts.items()
+        if count > target_size
+    }
+    over_classes = {
+        label: target_size
+        for label, count in class_counts.items()
+        if count < target_size
+    }
+
+    # Step 1: Undersample majority classes
+    under = (
+        RandomUnderSampler(sampling_strategy=under_classes, random_state=42)
+        if under_classes
+        else None
+    )
+
+    # Step 2: Oversample minority classes
+    smote = (
+        SMOTE(sampling_strategy=over_classes, random_state=42) if over_classes else None
+    )
+
+    # Build pipeline dynamically
+    steps = []
+    if under:
+        steps.append(("under", under))
+    if smote:
+        steps.append(("smote", smote))
+
+    if steps:
+        pipeline = Pipeline(steps=steps)
+        X_res, y_res = pipeline.fit_resample(X_train, y_train)
+    else:
+        X_res, y_res = X_train, y_train
+
+    return X_res, y_res
+
+
+print("Balancing training data...")
+X_train, y_train = balance_training_data(X_train, y_train)
+
+print("\nClass distribution in TRAIN set after balancing:")
+unique_train_bal, counts_train_bal = np.unique(y_train, return_counts=True)
+for label, count in zip(unique_train_bal, counts_train_bal):
     print(f"  {label}: {count}")
 
 print("Standardizing features...")
@@ -78,18 +139,16 @@ scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
 X_test = scaler.transform(X_test)
 
-print("Balancing training data with SMOTE...")
-# Find the minimum class count in y_train for SMOTE k_neighbors
-(unique_train, counts_train) = np.unique(y_train, return_counts=True)
-min_class_count = np.min(counts_train)
-k_neighbors = max(1, min_class_count - 1)
-smote = SMOTE(random_state=42, k_neighbors=k_neighbors)
-X_train_bal, y_train_bal = smote.fit_resample(X_train, y_train)
-
 print("Training classifier...")
 clf = RandomForestClassifier(n_estimators=100, random_state=42)
-clf.fit(X_train_bal, y_train_bal)
+clf.fit(X_train, y_train)
 
 print("Evaluating on test set...")
 y_pred = clf.predict(X_test)
 print(classification_report(y_test, y_pred))
+
+# Confusion matrix
+cm = confusion_matrix(y_test, y_pred)
+disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+disp.plot()
+plt.show()

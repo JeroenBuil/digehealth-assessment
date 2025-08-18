@@ -53,6 +53,10 @@ def extract_overlapping_segments(
     labels = []
 
     # Iterate over the audio signal with the specified hop length
+    # BUG: AS_1 contains overlapping annotations, where between noise sections there are bowel movements, the algorithm below will always mark it as noise instead of the other label
+    # This is because it only checks if the segment is fully contained in an annotation, and if not, it checks for overlaps and takes the one with the maximum overlap.
+    # This means that if a segment overlaps with both noise and bowel movement, it will always take the noise label.
+    # To fix this, we need to check for all overlapping annotations and take the one with
     for start in range(0, n_samples - win_length + 1, hop_length):
         seg_start_time = start / sample_rate
         seg_end_time = (start + win_length) / sample_rate
@@ -81,7 +85,7 @@ def extract_overlapping_segments(
                 )
                 label = overlaps.loc[overlaps["overlap"].idxmax(), "label"]
             else:
-                label = "s"  # add silence label if no annotations are present
+                label = "silence"  # add silence label if no annotations are present
         # Append the segment and its label
         segments.append(segment)
         labels.append(label)
@@ -98,11 +102,13 @@ def extract_features(segment, sample_rate):
 
 
 # Example usage
-wav_path = EXTERNAL_DATA_DIR / "Tech Test/23M74M.wav"
-annotation_path = EXTERNAL_DATA_DIR / "Tech Test/23M74M.txt"
+wav_path = EXTERNAL_DATA_DIR / "Tech Test/AS_1.wav"
+annotation_path = EXTERNAL_DATA_DIR / "Tech Test/AS_1.txt"
 wav_y, sample_rate = load_and_normalize_wav(wav_path)
 
 # Extract overlapping segments and features
 segments, labels = extract_overlapping_segments(wav_path, annotation_path)
 X = np.array([extract_features(seg, sample_rate=sample_rate) for seg in segments])
 y = np.array(labels)
+
+print(y[0:10])  # Print first 10 labels
