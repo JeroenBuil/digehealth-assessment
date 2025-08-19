@@ -7,8 +7,10 @@ from preprocessing import (
     extract_mfcc_features,
     extract_mel_spectrogram,
 )
+import torch
 import torch.nn as nn
-from torch.utils.data import WeightedRandomSampler
+from torch.utils.data import WeightedRandomSampler, Dataset
+
 from sklearn.preprocessing import LabelEncoder
 
 
@@ -16,6 +18,8 @@ def load_data_and_extract_features(
     file_pairs: list,
     allowed_labels: set,
     feature_type: str,
+    window_size_sec: float = 1,
+    window_overlap: float = 0.75,
     verbose=True,
 ):
     if feature_type not in ["mfcc", "spectrogram"]:
@@ -32,7 +36,10 @@ def load_data_and_extract_features(
     for wav_path, ann_path in file_pairs:
         wav_y, sample_rate = load_and_normalize_wav(wav_path)
         segments, labels = extract_overlapping_segments(
-            wav_path=wav_path, annotation_path=ann_path
+            wav_path=wav_path,
+            annotation_path=ann_path,
+            window_size_sec=window_size_sec,
+            window_overlap=window_overlap,
         )
         all_segments.extend(segments)
         all_labels.extend(labels)
@@ -187,3 +194,16 @@ class BowelSoundCNN(nn.Module):
         x = self.features(x)
         x = self.classifier(x)
         return x
+
+
+# Dataset class for PyTorch
+class SpectrogramDataset(Dataset):
+    def __init__(self, X, y):
+        self.X = torch.tensor(X, dtype=torch.float32)
+        self.y = torch.tensor(y, dtype=torch.long)
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, idx):
+        return self.X[idx], self.y[idx]

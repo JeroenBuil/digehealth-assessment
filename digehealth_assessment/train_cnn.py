@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import (
@@ -12,7 +12,7 @@ from sklearn.metrics import (
 )
 import matplotlib.pyplot as plt
 
-from config import EXTERNAL_DATA_DIR
+from config import EXTERNAL_DATA_DIR, MODELS_DIR
 from pathlib import Path
 from ml_pipeline import (
     load_data_and_extract_features,
@@ -21,20 +21,8 @@ from ml_pipeline import (
     evaluate_model,
     BowelSoundCNN,
     make_weighted_sampler,
+    SpectrogramDataset,
 )
-
-
-# Dataset class for PyTorch
-class SpectrogramDataset(Dataset):
-    def __init__(self, X, y):
-        self.X = torch.tensor(X, dtype=torch.float32)
-        self.y = torch.tensor(y, dtype=torch.long)
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
 
 
 file_pairs = [
@@ -47,11 +35,20 @@ file_pairs = [
         EXTERNAL_DATA_DIR / "Tech Test" / "AS_1.txt",
     ),
 ]
-allowed_labels = ["b", "mb", "h", "n", "silence"]
+allowed_labels = ["b", "mb", "h", "n"]
+
+window_size_sec = 0.3  # Size of each segment in seconds
+window_overlap = 0.75  # Overlap between segments as a fraction of window size
+
+retrain_model = True  # Set to False to evaluate an existing model
 
 # Load and prepare data
 X, y = load_data_and_extract_features(
-    file_pairs, allowed_labels, feature_type="spectrogram"
+    file_pairs,
+    allowed_labels,
+    feature_type="spectrogram",
+    window_size_sec=window_size_sec,
+    window_overlap=window_overlap,
 )
 
 # Split the data into training and testing sets
@@ -68,7 +65,6 @@ print_class_distribution(y_train, "\nClass distribution in TRAIN set:")
 
 
 print("Using WeightedRandomSampler for balancing...")
-
 le = LabelEncoder()
 y_train_enc = le.fit_transform(y_train)
 sampler, _ = make_weighted_sampler(y_train_enc)
@@ -89,36 +85,51 @@ test_dataset = SpectrogramDataset(X_test, y_test_enc)
 train_loader = DataLoader(train_dataset, batch_size=32, sampler=sampler)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = BowelSoundCNN(num_classes=len(le.classes_), input_shape=X_train.shape[1:]).to(
-    device
+model_path = (
+    MODELS_DIR / f"bowel_sound_cnn_win-{window_size_sec}_overlap-{window_overlap}.pth"
 )
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+# Only train the model if retraining is enabled
+if retrain_model:
 
-print("Training CNN...")
-num_epochs = 20
-for epoch in range(num_epochs):
-    model.train()
-    running_loss = 0.0
-    correct = 0
-    total = 0
-    for X_batch, y_batch in train_loader:
-        X_batch, y_batch = X_batch.to(device), y_batch.to(device)
-        optimizer.zero_grad()
-        outputs = model(X_batch)
-        loss = criterion(outputs, y_batch)
-        loss.backward()
-        optimizer.step()
-        running_loss += loss.item() * X_batch.size(0)
-        _, predicted = torch.max(outputs, 1)
-        correct += (predicted == y_batch).sum().item()
-        total += y_batch.size(0)
-    train_acc = correct / total
-    print(
-        f"Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/total:.4f}, Acc: {train_acc:.4f}"
-    )
+    # Define the CNN model
+    model = BowelSoundCNN(
+        num_classes=len(le.classes_), input_shape=X_train.shape[1:]
+    ).to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+    print("Training CNN model...")
+    num_epochs = 20
+    for epoch in range(num_epochs):
+        model.train()
+        running_loss = 0.0
+        correct = 0
+        total = 0
+        for X_batch, y_batch in train_loader:
+            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+            optimizer.zero_grad()
+            outputs = model(X_batch)
+            loss = criterion(outputs, y_batch)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item() * X_batch.size(0)
+            _, predicted = torch.max(outputs, 1)
+            correct += (predicted == y_batch).sum().item()
+            total += y_batch.size(0)
+        train_acc = correct / total
+        print(
+            f"Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/total:.4f}, Acc: {train_acc:.4f}"
+        )
+
+    # Save the trained model
+    torch.save(model.state_dict(), model_path)
+
+else:
+    model = BowelSoundCNN(
+        num_classes=len(le.classes_), input_shape=X_train.shape[1:]
+    ).to(device)
+    model.load_state_dict(torch.load(model_path, weights_only=True))
 
 print("Evaluating on test set...")
 model.eval()
