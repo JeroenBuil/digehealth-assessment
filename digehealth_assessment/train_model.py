@@ -148,7 +148,7 @@ y_pred = clf.predict(X_test)
 print(classification_report(y_test, y_pred))
 
 # Confusion matrix
-cm = confusion_matrix(y_test, y_pred)
-disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+cm = confusion_matrix(y_test, y_pred, labels=clf.classes_)
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=clf.classes_)
 disp.plot()
 plt.show()

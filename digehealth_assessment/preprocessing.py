@@ -4,6 +4,8 @@ import pandas as pd
 from pathlib import Path
 from config import EXTERNAL_DATA_DIR
 
+FALLBACK_LABEL = "silence" # In case no annotations are present for a window, we assign a fallback label
+
 
 def load_annotations(txt_path):
     df = pd.read_csv(txt_path, sep="\t", header=None, names=["start", "end", "label"])
@@ -53,39 +55,28 @@ def extract_overlapping_segments(
     labels = []
 
     # Iterate over the audio signal with the specified hop length
-    # BUG: AS_1 contains overlapping annotations, where between noise sections there are bowel movements, the algorithm below will always mark it as noise instead of the other label
-    # This is because it only checks if the segment is fully contained in an annotation, and if not, it checks for overlaps and takes the one with the maximum overlap.
-    # This means that if a segment overlaps with both noise and bowel movement, it will always take the noise label.
-    # To fix this, we need to check for all overlapping annotations and take the one with
     for start in range(0, n_samples - win_length + 1, hop_length):
         seg_start_time = start / sample_rate
         seg_end_time = (start + win_length) / sample_rate
         segment = y[start : start + win_length]
 
-        # Find annotations that fully contain the segment
-        contains = annotations[
-            (annotations["start"] <= seg_start_time)
-            & (annotations["end"] >= seg_end_time)
-        ]
-        if not contains.empty:
-            # If the segment is fully inside an annotation, use that label
-            label = contains.iloc[0]["label"]
+        # Find annotations that overlap with the current segment
+        overlaps = annotations[
+            (annotations["end"] > seg_start_time)
+            & (annotations["start"] < seg_end_time)
+        ].copy()
+        if overlaps.empty:
+            label = FALLBACK_LABEL  # add silence label if no annotations are present
         else:
-            # Otherwise, check for overlapping annotations
-            overlaps = annotations[
-                (annotations["end"] > seg_start_time)
-                & (annotations["start"] < seg_end_time)
-            ].copy()
-            if not overlaps.empty:
-                # Find annotation with max overlap
-                overlaps["overlap"] = overlaps.apply(
-                    lambda row: min(row["end"], seg_end_time)
-                    - max(row["start"], seg_start_time),
-                    axis=1,
-                )
-                label = overlaps.loc[overlaps["overlap"].idxmax(), "label"]
+            if len(overlaps) == 1:
+                # If only one annotation overlaps, use its label
+                label = overlaps.iloc[0]["label"]
             else:
-                label = "silence"  # add silence label if no annotations are present
+                # Assign label of annotation whose center is closest to segment center
+                seg_center = (seg_start_time + seg_end_time) / 2
+                centers = (overlaps["start"].values + overlaps["end"].values) / 2
+                center_dists = np.abs(centers - seg_center)
+                label = overlaps.iloc[center_dists.argmin()]["label"]
         # Append the segment and its label
         segments.append(segment)
         labels.append(label)
