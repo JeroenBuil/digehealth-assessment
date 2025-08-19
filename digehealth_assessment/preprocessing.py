@@ -92,25 +92,41 @@ def extract_mfcc_features(segment, sample_rate):
     return features
 
 
-def extract_spectrogram_features(segment):
-    """Extracts spectrogram features from an audio segment."""
-    # Compute the Short-Time Fourier Transform (STFT)
-    stft = librosa.stft(segment, n_fft=2048, hop_length=512)
-    # Convert to magnitude spectrogram
-    spectrogram = np.abs(stft)
-    # Compute log-magnitude spectrogram
-    log_spectrogram = librosa.amplitude_to_db(spectrogram, ref=np.max)
-    return log_spectrogram.flatten()  # Flatten to 1D array for ML models
+def extract_mel_spectrogram(
+    segment, sample_rate, n_mels=128, n_fft=2048, hop_length=512, max_len=128
+):
+    """
+    Extracts a fixed-size Mel-spectrogram for CNN input.
+    - Pads or truncates to max_len frames.
+    - Returns (n_mels, max_len) array.
+    """
+    mel_spec = librosa.feature.melspectrogram(
+        y=segment,
+        sr=sample_rate,
+        n_mels=n_mels,
+        n_fft=n_fft,
+        hop_length=hop_length,
+        power=2.0,
+    )
+    log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
+
+    # Pad or truncate along time axis
+    if log_mel_spec.shape[1] < max_len:
+        pad_width = max_len - log_mel_spec.shape[1]
+        log_mel_spec = np.pad(log_mel_spec, ((0, 0), (0, pad_width)), mode="constant")
+    else:
+        log_mel_spec = log_mel_spec[:, :max_len]
+
+    return log_mel_spec
 
 
-# Example usage
-wav_path = EXTERNAL_DATA_DIR / "Tech Test/AS_1.wav"
-annotation_path = EXTERNAL_DATA_DIR / "Tech Test/AS_1.txt"
-wav_y, sample_rate = load_and_normalize_wav(wav_path)
-
-# Extract overlapping segments and features
-segments, labels = extract_overlapping_segments(wav_path, annotation_path)
-X = np.array([extract_mfcc_features(seg, sample_rate=sample_rate) for seg in segments])
-y = np.array(labels)
-
-print(y[0:10])  # Print first 10 labels
+if __name__ == "__main__":
+    """Example usage of the segment extraction function.
+    This script extracts overlapping segments from a WAV file based on annotations
+    and prints the number of segments and their labels.
+    """
+    # Example usage
+    wav_path = EXTERNAL_DATA_DIR / "Tech Test/AS_1.wav"
+    annotation_path = EXTERNAL_DATA_DIR / "Tech Test/AS_1.txt"
+    segments, labels = extract_overlapping_segments(wav_path, annotation_path)
+    print(f"Extracted {len(segments)} segments with labels: {labels[:10]}")

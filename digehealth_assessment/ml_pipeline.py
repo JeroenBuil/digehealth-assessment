@@ -5,8 +5,11 @@ from preprocessing import (
     load_and_normalize_wav,
     extract_overlapping_segments,
     extract_mfcc_features,
-    extract_spectrogram_features,
+    extract_mel_spectrogram,
 )
+import torch.nn as nn
+from torch.utils.data import WeightedRandomSampler
+from sklearn.preprocessing import LabelEncoder
 
 
 def load_data_and_extract_features(
@@ -39,16 +42,14 @@ def load_data_and_extract_features(
     all_labels = [label if label in allowed_labels else "n" for label in all_labels]
 
     if feature_type == "mfcc":
-        X = np.array(
-            [
-                extract_mfcc_features(seg, sample_rate=sr)
-                for seg, sr in zip(all_segments, all_sample_rates)
-            ]
-        )
+        X = [
+            extract_mfcc_features(seg, sample_rate=sr)
+            for seg, sr in zip(all_segments, all_sample_rates)
+        ]
     elif feature_type == "spectrogram":
         X = np.array(
             [
-                extract_spectrogram_features(seg)
+                extract_mel_spectrogram(seg, sample_rate=sr)
                 for seg, sr in zip(all_segments, all_sample_rates)
             ]
         )
@@ -57,7 +58,7 @@ def load_data_and_extract_features(
             f"Invalid feature_type: {feature_type}. Must be 'mfcc' or 'spectrogram'."
         )
 
-    y = np.array(all_labels)
+    y = all_labels
 
     return X, y
 
@@ -114,6 +115,27 @@ def balance_training_data(X_train, y_train):
     return X_res, y_res
 
 
+def make_weighted_sampler(y_train_enc):
+    """Create a WeightedRandomSampler for balancing classes in training data.
+    Args:
+        y_train_enc (np.ndarray): Encoded training labels.
+    Returns:
+        sampler (WeightedRandomSampler): Sampler for balancing classes.
+        y_train_enc (np.ndarray): Encoded training labels.
+    """
+    class_counts = np.bincount(y_train_enc)
+    class_weights = 1.0 / class_counts
+    sample_weights = class_weights[y_train_enc]
+
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True,
+    )
+    return sampler, y_train_enc
+    return sampler, y_train_enc
+
+
 def standardize_features(X_train, X_test):
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
@@ -137,3 +159,31 @@ def evaluate_model(clf, X_test, y_test):
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=clf.classes_)
     disp.plot()
     plt.show()
+
+
+class BowelSoundCNN(nn.Module):
+    def __init__(self, num_classes, input_shape):
+        super().__init__()
+        c, h, w = input_shape
+        self.features = nn.Sequential(
+            nn.Conv2d(c, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((1, 1)),  # global pooling
+        )
+        self.classifier = nn.Sequential(
+            nn.Flatten(), nn.Dropout(0.5), nn.Linear(128, num_classes)
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = self.classifier(x)
+        return x
