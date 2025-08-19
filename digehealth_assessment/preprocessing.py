@@ -4,7 +4,7 @@ import pandas as pd
 from pathlib import Path
 from config import EXTERNAL_DATA_DIR
 
-FALLBACK_LABEL = "silence" # In case no annotations are present for a window, we assign a fallback label
+FALLBACK_LABEL = "silence"  # In case no annotations are present for a window, we assign a fallback label
 
 
 def load_annotations(txt_path):
@@ -83,13 +83,24 @@ def extract_overlapping_segments(
     return segments, labels
 
 
-def extract_features(segment, sample_rate):
+def extract_mfcc_features(segment, sample_rate):
     mfcc = librosa.feature.mfcc(y=segment, sr=sample_rate, n_mfcc=13)
     zcr = librosa.feature.zero_crossing_rate(segment)
     features = np.hstack(
         [np.mean(mfcc, axis=1), np.std(mfcc, axis=1), np.mean(zcr), np.std(zcr)]
     )
     return features
+
+
+def extract_spectrogram_features(segment):
+    """Extracts spectrogram features from an audio segment."""
+    # Compute the Short-Time Fourier Transform (STFT)
+    stft = librosa.stft(segment, n_fft=2048, hop_length=512)
+    # Convert to magnitude spectrogram
+    spectrogram = np.abs(stft)
+    # Compute log-magnitude spectrogram
+    log_spectrogram = librosa.amplitude_to_db(spectrogram, ref=np.max)
+    return log_spectrogram.flatten()  # Flatten to 1D array for ML models
 
 
 # Example usage
@@ -99,7 +110,7 @@ wav_y, sample_rate = load_and_normalize_wav(wav_path)
 
 # Extract overlapping segments and features
 segments, labels = extract_overlapping_segments(wav_path, annotation_path)
-X = np.array([extract_features(seg, sample_rate=sample_rate) for seg in segments])
+X = np.array([extract_mfcc_features(seg, sample_rate=sample_rate) for seg in segments])
 y = np.array(labels)
 
 print(y[0:10])  # Print first 10 labels
