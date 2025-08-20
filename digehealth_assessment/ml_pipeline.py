@@ -181,13 +181,13 @@ class BowelSoundCNN(nn.Module):
             nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.MaxPool2d(2),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(64, 30, kernel_size=3, padding=1),
+            nn.BatchNorm2d(30),
             nn.ReLU(),
             nn.AdaptiveAvgPool2d((1, 1)),  # global pooling
         )
         self.classifier = nn.Sequential(
-            nn.Flatten(), nn.Dropout(0.5), nn.Linear(128, num_classes)
+            nn.Flatten(), nn.Dropout(0.5), nn.Linear(30, num_classes)
         )
 
     def forward(self, x):
@@ -202,6 +202,7 @@ class SpectrogramDataset(Dataset):
         self.X = torch.tensor(X, dtype=torch.float32)
         self.y = torch.tensor(y, dtype=torch.long)
 
+    # TODO: check if y needs to be long format
     def __len__(self):
         return len(self.X)
 

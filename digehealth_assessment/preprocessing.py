@@ -1,6 +1,7 @@
 import librosa
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from pathlib import Path
 from config import EXTERNAL_DATA_DIR
 
@@ -93,12 +94,18 @@ def extract_mfcc_features(segment, sample_rate):
 
 
 def extract_mel_spectrogram(
-    segment, sample_rate, n_mels=128, n_fft=2048, hop_length=512, max_len=128
+    segment, sample_rate, n_mels=128, n_fft=2048, hop_length=512, max_len=30
 ):
-    """
-    Extracts a fixed-size Mel-spectrogram for CNN input.
-    - Pads or truncates to max_len frames.
-    - Returns (n_mels, max_len) array.
+    """Extracts a log-mel spectrogram from an audio segment.
+    Args:
+        segment (np.ndarray): Audio segment.
+        sample_rate (int): Sample rate of the audio.
+        n_mels (int): Number of mel bands.
+        n_fft (int): Length of the FFT window.
+        hop_length (int): Number of samples between successive frames.
+        max_len (int): Maximum length of the output spectrogram.
+    Returns:
+        log_mel_spec (np.ndarray): Log-mel spectrogram of shape (n_mels, max_len).
     """
     mel_spec = librosa.feature.melspectrogram(
         y=segment,
@@ -110,12 +117,17 @@ def extract_mel_spectrogram(
     )
     log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
 
-    # Pad or truncate along time axis
+    # Pad or truncate
     if log_mel_spec.shape[1] < max_len:
         pad_width = max_len - log_mel_spec.shape[1]
         log_mel_spec = np.pad(log_mel_spec, ((0, 0), (0, pad_width)), mode="constant")
     else:
         log_mel_spec = log_mel_spec[:, :max_len]
+
+    # Normalize (zero mean, unit variance)
+    log_mel_spec = (log_mel_spec - np.mean(log_mel_spec)) / (
+        np.std(log_mel_spec) + 1e-6
+    )
 
     return log_mel_spec
 
@@ -128,5 +140,21 @@ if __name__ == "__main__":
     # Example usage
     wav_path = EXTERNAL_DATA_DIR / "Tech Test/AS_1.wav"
     annotation_path = EXTERNAL_DATA_DIR / "Tech Test/AS_1.txt"
+
+    # Load wave and read in sample rate
+    wav_y, sample_rate = load_and_normalize_wav(wav_path)
+
     segments, labels = extract_overlapping_segments(wav_path, annotation_path)
-    print(f"Extracted {len(segments)} segments with labels: {labels[:10]}")
+    n_labels_to_print = 10
+    print(
+        f"Extracted {len(segments)} segments , the first {n_labels_to_print}: {labels[:n_labels_to_print]}"
+    )
+
+    # Example of extracting features from the first segment
+    mel_spec = extract_mel_spectrogram(segments[0], sample_rate=sample_rate)
+    print(f"Shape of extracted features: {mel_spec.shape}")
+
+    # Visualise mel spectrogram
+    plt.figure(figsize=(10, 4))
+    plt.imshow(mel_spec, aspect="auto", origin="lower", cmap="viridis")
+    plt.show()

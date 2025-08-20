@@ -40,7 +40,7 @@ allowed_labels = ["b", "mb", "h", "n"]
 window_size_sec = 0.3  # Size of each segment in seconds
 window_overlap = 0.75  # Overlap between segments as a fraction of window size
 
-retrain_model = True  # Set to False to evaluate an existing model
+retrain_model = False  # Set to False to evaluate an existing model
 
 # Load and prepare data
 X, y = load_data_and_extract_features(
@@ -70,7 +70,10 @@ y_train_enc = le.fit_transform(y_train)
 sampler, _ = make_weighted_sampler(y_train_enc)
 y_test_enc = le.transform(y_test)
 
-# Ensure correct shape
+# Ensure correct shape for CNN input
+# This should be (N, C, H, W) for CNNs, with N being the number of samples,
+# C being the number of channels, H being the height, and W being the width.
+# If the input is 2D, we add a channel dimension
 if X_train.ndim == 3:
     X_train = X_train[..., np.newaxis]
     X_test = X_test[..., np.newaxis]
@@ -87,7 +90,7 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model_path = (
-    MODELS_DIR / f"bowel_sound_cnn_win-{window_size_sec}_overlap-{window_overlap}.pth"
+    MODELS_DIR / f"bowel_sound_cnn_win{window_size_sec}_overlap{window_overlap}.pth"
 )
 # Only train the model if retraining is enabled
 if retrain_model:
@@ -150,3 +153,7 @@ cm = confusion_matrix(all_labels, all_preds)
 disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=le.classes_)
 disp.plot()
 plt.show()
+
+
+# TODO: K-fold cross-validation
+# TODO: AL
