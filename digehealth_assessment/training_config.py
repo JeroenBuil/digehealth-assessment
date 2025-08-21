@@ -19,7 +19,7 @@ DEFAULT_FILE_PAIRS = [
 DEFAULT_ALLOWED_LABELS = ["b", "mb", "h", "n", "silence"]
 
 # Common window parameters
-DEFAULT_WINDOW_SIZE_SEC = 0.1
+DEFAULT_WINDOW_SIZE_SEC = 0.3
 DEFAULT_WINDOW_OVERLAP = 0.5
 
 # Training parameters

@@ -1,6 +1,7 @@
 """Data utility functions for balancing, sampling, and analysis."""
 
 import numpy as np
+import torch
 from typing import List, Tuple, Any
 
 
@@ -58,7 +59,9 @@ def balance_training_data(X_train: List, y_train: List) -> Tuple[List, List]:
     return X_res, y_res
 
 
-def make_weighted_sampler(y_train: np.ndarray) -> Tuple[Any, np.ndarray]:
+def make_weighted_sampler(
+    y_train: np.ndarray, random_state: int = None
+) -> Tuple[Any, np.ndarray]:
     """Create a weighted sampler for imbalanced datasets."""
     from torch.utils.data import WeightedRandomSampler
 
@@ -67,9 +70,16 @@ def make_weighted_sampler(y_train: np.ndarray) -> Tuple[Any, np.ndarray]:
     class_weights = 1.0 / counts
     sample_weights = class_weights[y_train]
 
-    # Create sampler
+    # Create sampler with optional random state
     sampler = WeightedRandomSampler(
-        weights=sample_weights, num_samples=len(y_train), replacement=True
+        weights=sample_weights,
+        num_samples=len(y_train),
+        replacement=True,
+        generator=(
+            torch.Generator().manual_seed(random_state)
+            if random_state is not None
+            else None
+        ),
     )
 
     return sampler, sample_weights

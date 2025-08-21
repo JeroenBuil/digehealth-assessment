@@ -5,6 +5,8 @@ import torch
 from torch.utils.data import DataLoader
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import classification_report
+import random
+import os
 
 from config import MODELS_DIR, FIGURES_DIR
 from pathlib import Path
@@ -34,10 +36,14 @@ from training_config import (
 )
 from modeling.lstm import BowelSoundLSTM
 from modeling.datasets import SpectrogramDataset, pad_collate_spectrograms
+from utils.model_utils import set_random_seeds
 
 
 def main():
     """Main training function."""
+    # Set random seeds for reproducible results
+    set_random_seeds(seed=42)
+
     # Configuration
     file_pairs = DEFAULT_FILE_PAIRS
     allowed_labels = DEFAULT_ALLOWED_LABELS
@@ -45,7 +51,7 @@ def main():
     window_overlap = DEFAULT_WINDOW_OVERLAP
     retrain_model = DEFAULT_RETRAIN_MODEL
 
-    print("Loading and preparing data...")
+    print("Loading + splitting data + Extracting features... (this may take a while)")
     # Load and prepare data (blocked split per file to keep test time-consecutive)
     X_train, y_train, X_test, y_test = load_blocked_split_features(
         file_pairs=file_pairs,
@@ -63,7 +69,7 @@ def main():
     print("Using WeightedRandomSampler for balancing...")
     le = LabelEncoder()
     y_train_enc = le.fit_transform(y_train)
-    sampler, _ = make_weighted_sampler(y_train_enc)
+    sampler, _ = make_weighted_sampler(y_train_enc, random_state=42)
     y_test_enc = le.transform(y_test)
 
     # Datasets (dataset converts to NCHW automatically; supports variable width)

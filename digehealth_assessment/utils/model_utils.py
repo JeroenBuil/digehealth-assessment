@@ -1,6 +1,21 @@
 import re
 from typing import List, Tuple
 import numpy as np
+import random
+import os
+import torch
+
+def set_random_seeds(seed=42):
+    """Set all random seeds for reproducible results."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if using multi-GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    print(f"Random seeds set to {seed} for reproducible training")
 
 
 def parse_window_from_model_name(model_stem: str) -> Tuple[float, float]:

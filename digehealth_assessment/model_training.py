@@ -238,7 +238,7 @@ def save_model_checkpoint(
     """Save a trained model with metadata."""
     model_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if model_type in ["cnn", "lstm"]:
+    if model_type in ["cnn", "lstm", "cnn_v2", "cnn_v3"]:
         torch.save(metadata, model_path)
     elif model_type == "random_forest":
         import pickle

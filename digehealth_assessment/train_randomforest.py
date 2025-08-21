@@ -25,10 +25,14 @@ from training_config import (
     DEFAULT_RF_RANDOM_STATE,
 )
 from evaluation import build_mfcc_feature_names
+from utils.model_utils import set_random_seeds
 
 
-def main():
+def main(): 
     """Main training function."""
+    # Set random seeds for reproducible results
+    set_random_seeds(seed=42)
+
     # Configuration
     file_pairs = DEFAULT_FILE_PAIRS
     allowed_labels = DEFAULT_ALLOWED_LABELS
