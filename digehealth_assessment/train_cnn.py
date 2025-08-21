@@ -39,7 +39,7 @@ file_pairs = [
 
 allowed_labels = ["b", "mb", "h", "n", "silence"]
 
-window_size_sec = 0.1  # Size of each segment in seconds
+window_size_sec = 0.2  # Size of each segment in seconds
 window_overlap = 0.5  # Overlap between segments as a fraction of window size
 
 retrain_model = True  # Set to False to evaluate an existing model
