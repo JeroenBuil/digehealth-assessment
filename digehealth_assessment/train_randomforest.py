@@ -1,124 +1,133 @@
+"""Random Forest training script for bowel sound classification."""
+
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import classification_report
-
-from config import EXTERNAL_DATA_DIR, MODELS_DIR, FIGURES_DIR
 from pathlib import Path
-from ml_pipeline import (
-    load_blocked_split_features,
-    print_class_distribution,
-    balance_training_data,
+
+from config import MODELS_DIR, FIGURES_DIR
+from data_loading import load_blocked_split_features
+from data_utils import print_class_distribution
+from model_training import (
+    train_random_forest_model,
+    save_model_checkpoint,
+    create_evaluation_plots,
+    create_feature_importance_plot,
 )
-from evaluation import plot_confusion_and_roc, plot_feature_importances
-from preprocessing import extract_mfcc_features
-
-file_pairs = [
-    (
-        EXTERNAL_DATA_DIR / "Tech Test" / "AS_1.wav",
-        EXTERNAL_DATA_DIR / "Tech Test" / "AS_1.txt",
-    ),
-    (
-        EXTERNAL_DATA_DIR / "Tech Test" / "23M74M.wav",
-        EXTERNAL_DATA_DIR / "Tech Test" / "23M74M.txt",
-    ),
-]
-allowed_labels = ["b", "mb", "h", "n", "silence"]
-
-window_size_sec = 0.1  # Size of each segment in seconds
-window_overlap = 0.5  # Overlap between segments as a fraction of window size
-
-retrain_model = True  # Set to False to evaluate an existing model
-
-print("Loading + splitting data + Extracting features... (this may take a while)")
-# Load and prepare data (blocked split per file to keep test time-consecutive)
-X_train, y_train, X_test, y_test = load_blocked_split_features(
-    file_pairs=file_pairs,
-    allowed_labels=allowed_labels,
-    feature_type="mfcc",
-    window_size_sec=window_size_sec,
-    window_overlap=window_overlap,
-    test_fraction=0.2,
-    ensure_label_coverage=True,
+from training_config import (
+    DEFAULT_FILE_PAIRS,
+    DEFAULT_ALLOWED_LABELS,
+    DEFAULT_WINDOW_SIZE_SEC,
+    DEFAULT_WINDOW_OVERLAP,
+    DEFAULT_TEST_FRACTION,
+    DEFAULT_ENSURE_LABEL_COVERAGE,
+    DEFAULT_RETRAIN_MODEL,
+    DEFAULT_RF_N_ESTIMATORS,
+    DEFAULT_RF_RANDOM_STATE,
 )
+from evaluation import build_mfcc_feature_names
 
-print_class_distribution(y_train, "\nClass distribution in TRAIN set:")
-print_class_distribution(y_test, "\nClass distribution in Test set:")
 
-print("Balancing training data...")
-X_train_bal, y_train_bal = balance_training_data(X_train, y_train)
-print_class_distribution(
-    y_train_bal, "\nClass distribution in TRAIN set after balancing:"
-)
+def main():
+    """Main training function."""
+    # Configuration
+    file_pairs = DEFAULT_FILE_PAIRS
+    allowed_labels = DEFAULT_ALLOWED_LABELS
+    window_size_sec = DEFAULT_WINDOW_SIZE_SEC
+    window_overlap = DEFAULT_WINDOW_OVERLAP
+    retrain_model = DEFAULT_RETRAIN_MODEL
 
-# Encode labels
-le = LabelEncoder()
-y_train_enc = le.fit_transform(y_train_bal)
-y_test_enc = le.transform(y_test)
+    print("Loading + splitting data + Extracting features... (this may take a while)")
+    # Load and prepare data (blocked split per file to keep test time-consecutive)
+    X_train, y_train, X_test, y_test = load_blocked_split_features(
+        file_pairs=file_pairs,
+        allowed_labels=allowed_labels,
+        feature_type="mfcc",
+        window_size_sec=window_size_sec,
+        window_overlap=window_overlap,
+        test_fraction=DEFAULT_TEST_FRACTION,
+        ensure_label_coverage=DEFAULT_ENSURE_LABEL_COVERAGE,
+    )
 
-# Convert MFCC features to numpy array for sklearn
-X_train_array = np.array(X_train_bal)
-X_test_array = np.array(X_test)
+    print_class_distribution(y_train, "\nClass distribution in TRAIN set:")
+    print_class_distribution(y_test, "\nClass distribution in Test set:")
 
-# Standardize features inline (fit on train, transform both)
-print("Standardizing features...")
-scaler = StandardScaler()
-X_train_array = scaler.fit_transform(X_train_array)
-X_test_array = scaler.transform(X_test_array)
+    if retrain_model:
+        # Train RandomForest classifier
+        clf, scaler, le, X_test_scaled, y_test_enc = train_random_forest_model(
+            X_train=X_train,
+            y_train=y_train,
+            X_test=X_test,
+            y_test=y_test,
+            n_estimators=DEFAULT_RF_N_ESTIMATORS,
+            random_state=DEFAULT_RF_RANDOM_STATE,
+        )
 
-# Train RandomForest classifier
-print("Training RandomForest classifier...")
-clf = RandomForestClassifier(n_estimators=100, random_state=42)
-clf.fit(X_train_array, y_train_enc)
+        # Save model and create evaluation plots
+        model_path = (
+            MODELS_DIR
+            / f"bowel_sound_rf_win{window_size_sec}_overlap{window_overlap}.pth"
+        )
 
-# Evaluate the model
-print("Evaluating on test set...")
-y_pred = clf.predict(X_test_array)
-y_probs = clf.predict_proba(X_test_array)
+        # Save the trained model with metadata for inference
+        metadata = {
+            "scaler": scaler,
+            "classes": le.classes_.tolist(),
+            "window_size_sec": window_size_sec,
+            "window_overlap": window_overlap,
+            "feature_type": "mfcc",
+        }
+        save_model_checkpoint(clf, model_path, metadata, model_type="random_forest")
 
-test_acc = np.mean(y_pred == y_test_enc)
-print(f"Test accuracy: {test_acc:.3f}")
+    else:
+        # Load existing model
+        model_path = (
+            MODELS_DIR
+            / f"bowel_sound_rf_win{window_size_sec}_overlap{window_overlap}.pth"
+        )
+        import pickle
 
-print(classification_report(y_test_enc, y_pred, target_names=le.classes_))
+        checkpoint = pickle.load(open(model_path, "rb"))
+        clf = checkpoint["model"]
+        scaler = checkpoint["scaler"]
+        le = checkpoint["classes"]
 
-# Save model and create evaluation plots
-model_path = (
-    MODELS_DIR / f"bowel_sound_rf_win{window_size_sec}_overlap{window_overlap}.pth"
-)
-MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        # Transform test data
+        X_test_array = np.array(X_test)
+        X_test_scaled = scaler.transform(X_test_array)
+        y_test_enc = le.transform(y_test)
 
-# Save the trained model with metadata for inference
-checkpoint = {
-    "model": clf,
-    "scaler": scaler,
-    "classes": le.classes_.tolist(),
-    "window_size_sec": window_size_sec,
-    "window_overlap": window_overlap,
-    "feature_type": "mfcc",
-}
-import pickle
+    # Evaluate the model
+    print("Evaluating on test set...")
+    y_pred = clf.predict(X_test_scaled)
+    y_probs = clf.predict_proba(X_test_scaled)
 
-pickle.dump(checkpoint, open(model_path, "wb"))
-print(f"Saved model to {model_path}")
+    test_acc = np.mean(y_pred == y_test_enc)
+    print(f"Test accuracy: {test_acc:.3f}")
 
-# Create evaluation plots
-fig_name_stem = model_path.stem
-save_path = FIGURES_DIR / f"{fig_name_stem}_cm_roc.png"
-FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-plot_confusion_and_roc(
-    y_test_enc,
-    y_probs,
-    classes=le.classes_,
-    save_path=save_path,
-    show=True,
-)
+    print(classification_report(y_test_enc, y_pred, target_names=le.classes_))
 
-# Feature importance plot
-fi_path = FIGURES_DIR / f"{fig_name_stem}_feature_importance.png"
-plot_feature_importances(
-    importances=clf.feature_importances_,
-    save_path=fi_path,
-    top_k=10,
-    show=True,
-)
-print(f"Saved feature importance plot to {fi_path}")
+    # Create evaluation plots
+    fig_name_stem = model_path.stem
+    create_evaluation_plots(
+        y_true=y_test_enc,
+        y_scores=y_probs,
+        classes=le.classes_,
+        model_name=fig_name_stem,
+        save_dir=FIGURES_DIR,
+        show=True,
+    )
+
+    # Feature importance plot
+    feature_names = build_mfcc_feature_names(n_mfcc=13, n_spectral_contrast_bands=7)
+    create_feature_importance_plot(
+        importances=clf.feature_importances_,
+        model_name=fig_name_stem,
+        save_dir=FIGURES_DIR,
+        top_k=10,
+        show=True,
+        feature_names=feature_names,
+    )
+
+
+if __name__ == "__main__":
+    main()

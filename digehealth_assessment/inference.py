@@ -1,3 +1,5 @@
+"""Inference script for trained bowel sound classification models."""
+
 from pathlib import Path
 from typing import List, Tuple
 
@@ -29,81 +31,89 @@ from utils.events import build_events_from_label_changes, _plot_events_section
 app = typer.Typer()
 
 
+def load_model(model_path: Path, device: torch.device):
+    """Load a trained model (CNN or Random Forest)."""
+    if model_path.suffix == ".pth":
+        # CNN model
+        logger.info(f"Loading CNN checkpoint: {model_path}")
+        checkpoint = torch.load(model_path, map_location=device)
 
-@app.command()
-def predict(
-    audio_path: Path = typer.Argument(..., help="Path to WAV file"),
-    model_path: Path = typer.Option(
-        MODELS_DIR / "bowel_sound_cnn_win1_overlap0.75.pth",
-        help="Path to trained CNN checkpoint",
-    ),
-    annotation_path: Path = typer.Option(
-        None, help="Path to annotation TXT; defaults to audio with .txt"
-    ),
-    output_txt: Path = typer.Option(
-        PROCESSED_DATA_DIR / "predictions.txt", help="Where to write TXT predictions"
-    ),
-):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    logger.info(f"Loading checkpoint: {model_path}")
-    checkpoint = torch.load(model_path, map_location=device)
-    if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
-        classes = checkpoint.get("classes")
-        # Parse window params from filename (overrides checkpoint values)
-        window_size_sec, window_overlap = parse_window_from_model_name(model_path.stem)
-        input_shape = tuple(checkpoint.get("input_shape"))
-        model = BowelSoundCNN(num_classes=len(classes), input_shape=input_shape).to(
-            device
-        )
-        model.load_state_dict(checkpoint["state_dict"])  # type: ignore[index]
-    else:
-        # Backward compatibility with state_dict-only checkpoints
-        logger.warning("Old checkpoint format detected. Using default params.")
-        classes = ["b", "mb", "h", "n", "silence"]
-        # Parse from filename if possible; else default
-        try:
+        if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+            classes = checkpoint.get("classes")
+            # Parse window params from filename (overrides checkpoint values)
             window_size_sec, window_overlap = parse_window_from_model_name(
                 model_path.stem
             )
-        except ValueError:
-            raise ValueError(
-                "Model filename must contain 'win<sec>_overlap<frac>', e.g., win0.5_overlap0.75"
+            input_shape = tuple(checkpoint.get("input_shape"))
+            model = BowelSoundCNN(num_classes=len(classes), input_shape=input_shape).to(
+                device
             )
-        y_for_shape, sr_for_shape = load_and_normalize_wav(audio_path)
-        win_len = int(window_size_sec * sr_for_shape)
-        dummy_seg = y_for_shape[:win_len]
-        dummy_spec = extract_mel_spectrogram(dummy_seg, sample_rate=sr_for_shape)
-        input_shape = (1, dummy_spec.shape[0], dummy_spec.shape[1])
-        model = BowelSoundCNN(num_classes=len(classes), input_shape=input_shape).to(
-            device
-        )
-        model.load_state_dict(checkpoint)
+            model.load_state_dict(checkpoint["state_dict"])
+            model_type = "cnn"
+            scaler = None
+        else:
+            # Backward compatibility with state_dict-only checkpoints
+            logger.warning("Old checkpoint format detected. Using default params.")
+            classes = ["b", "mb", "h", "n", "silence"]
+            try:
+                window_size_sec, window_overlap = parse_window_from_model_name(
+                    model_path.stem
+                )
+            except ValueError:
+                raise ValueError(
+                    "Model filename must contain 'win<sec>_overlap<frac>', e.g., win0.5_overlap0.75"
+                )
+            # Need to determine input shape from a sample
+            model_type = "cnn"
+            model = None  # Will be created later when we have input shape
+            scaler = None
 
-    model.eval()
+    else:
+        # Random Forest model
+        logger.info(f"Loading Random Forest checkpoint: {model_path}")
+        import pickle
 
-    # Segment audio using the same parameters
-    logger.info("Segmenting audio...")
-    segments, times, sample_rate, hop_sec = extract_overlapping_windows(
-        audio_path, window_size_sec=window_size_sec, window_overlap=window_overlap
-    )
+        checkpoint = pickle.load(open(model_path, "rb"))
+        classes = checkpoint.get("classes")
+        window_size_sec = checkpoint.get("window_size_sec")
+        window_overlap = checkpoint.get("window_overlap")
+        model = checkpoint.get("model")
+        scaler = checkpoint.get("scaler")
+        model_type = "random_forest"
 
+    return model, classes, window_size_sec, window_overlap, model_type, scaler
+
+
+def run_cnn_inference(
+    model: BowelSoundCNN,
+    segments: List[np.ndarray],
+    times: List[Tuple[float, float]],
+    device: torch.device,
+    batch_size: int = 64,
+) -> Tuple[List[int], List[np.ndarray]]:
+    """Run inference using a CNN model."""
     specs: List[np.ndarray] = [
-        extract_mel_spectrogram(seg, sample_rate=sample_rate) for seg in segments
+        extract_mel_spectrogram(seg, sample_rate=16000)
+        for seg in segments  # Assuming 16kHz
     ]
 
     if not specs:
         logger.warning("No segments were generated from the audio. Exiting.")
-        return
+        return [], []
 
     dataset = SpectrogramDataset(specs, np.zeros(len(specs), dtype=np.int64))
     loader = DataLoader(
-        dataset, batch_size=64, shuffle=False, collate_fn=pad_collate_spectrograms
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=pad_collate_spectrograms,
     )
 
-    logger.info("Running model inference...")
+    logger.info("Running CNN model inference...")
     all_preds: List[int] = []
     all_probs: List[np.ndarray] = []
+
+    model.eval()
     with torch.no_grad():
         for X_batch, _ in loader:
             X_batch = X_batch.to(device)
@@ -112,6 +122,97 @@ def predict(
             _, predicted = torch.max(probs, 1)
             all_preds.extend(predicted.cpu().numpy().tolist())
             all_probs.extend(probs.cpu().numpy())
+
+    return all_preds, all_probs
+
+
+def run_random_forest_inference(
+    model,
+    scaler,
+    segments: List[np.ndarray],
+    times: List[Tuple[float, float]],
+) -> Tuple[List[int], List[np.ndarray]]:
+    """Run inference using a Random Forest model."""
+    from preprocessing import extract_mfcc_features
+
+    logger.info("Running Random Forest model inference...")
+
+    # Extract MFCC features
+    specs = [
+        extract_mfcc_features(seg, sample_rate=16000) for seg in segments
+    ]  # Assuming 16kHz
+
+    if not specs:
+        logger.warning("No segments were generated from the audio. Exiting.")
+        return [], []
+
+    # Convert to numpy array and scale
+    X = np.array(specs)
+    X_scaled = scaler.transform(X)
+
+    # Get predictions and probabilities
+    all_preds = model.predict(X_scaled).tolist()
+    all_probs = model.predict_proba(X_scaled)
+
+    return all_preds, all_probs
+
+
+@app.command()
+def predict(
+    audio_path: Path = typer.Argument(..., help="Path to WAV file"),
+    model_path: Path = typer.Option(
+        MODELS_DIR / "bowel_sound_cnn_win1_overlap0.75.pth",
+        help="Path to trained model checkpoint",
+    ),
+    annotation_path: Path = typer.Option(
+        None, help="Path to annotation TXT; defaults to audio with .txt"
+    ),
+    output_txt: Path = typer.Option(
+        PROCESSED_DATA_DIR / "predictions.txt", help="Where to write TXT predictions"
+    ),
+):
+    """Run inference using a trained model."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Load model
+    model, classes, window_size_sec, window_overlap, model_type, scaler = load_model(
+        model_path, device
+    )
+
+    # For CNN models that need input shape determination
+    if model_type == "cnn" and model is None:
+        # Need to determine input shape from a sample
+        y_for_shape, sr_for_shape = load_and_normalize_wav(audio_path)
+        win_len = int(window_size_sec * sr_for_shape)
+        dummy_seg = y_for_shape[:win_len]
+        dummy_spec = extract_mel_spectrogram(dummy_seg, sample_rate=sr_for_shape)
+        input_shape = (1, dummy_spec.shape[0], dummy_spec.shape[1])
+        model = BowelSoundCNN(num_classes=len(classes), input_shape=input_shape).to(
+            device
+        )
+        # Load state dict
+        checkpoint = torch.load(model_path, map_location=device)
+        model.load_state_dict(checkpoint)
+
+    # Segment audio using the same parameters
+    logger.info("Segmenting audio...")
+    segments, times, sample_rate, hop_sec = extract_overlapping_windows(
+        audio_path, window_size_sec=window_size_sec, window_overlap=window_overlap
+    )
+
+    # Run inference based on model type
+    if model_type == "cnn":
+        all_preds, all_probs = run_cnn_inference(model, segments, times, device)
+    elif model_type == "random_forest":
+        all_preds, all_probs = run_random_forest_inference(
+            model, scaler, segments, times
+        )
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
+
+    if not all_preds:
+        logger.warning("No predictions generated. Exiting.")
+        return
 
     # Align class names to model's output dimension dynamically
     classes = align_classes_to_logits(classes, all_probs)
@@ -160,13 +261,17 @@ def predict(
 
 
 if __name__ == "__main__":
-    """This function is used to test the model on a single audio file.
-    It is also used to generate the predictions.txt file.
-    """
+    """This function is used to test the model on a single audio file."""
     # Hardcoded defaults for simple script execution
     default_audio = EXTERNAL_DATA_DIR / "Tech Test" / "23M74M.wav"
     default_ann = EXTERNAL_DATA_DIR / "Tech Test" / "23M74M.txt"
-    default_model = MODELS_DIR / "bowel_sound_cnn_win0.2_overlap0.5.pth"
+
+    # Try to find a model to use
+    model_files = list(MODELS_DIR.glob("*.pth"))
+    if model_files:
+        default_model = model_files[0]  # Use first available model
+    else:
+        default_model = MODELS_DIR / "bowel_sound_cnn_win0.2_overlap0.5.pth"
 
     predict(
         audio_path=default_audio,
