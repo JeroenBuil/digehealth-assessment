@@ -23,7 +23,7 @@ from ml_pipeline import (
     plot_roc_curve,
 )
 from modeling.cnn import BowelSoundCNN
-from datasets import SpectrogramDataset
+from modeling.datasets import SpectrogramDataset
 
 
 file_pairs = [

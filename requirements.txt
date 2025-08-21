@@ -11,4 +11,9 @@ ruff
 scikit-learn
 tqdm
 typer
+torch
+librosa
+soundfile
+imbalanced-learn
+seaborn
 -e .

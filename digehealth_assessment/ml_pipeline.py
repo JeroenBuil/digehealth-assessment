@@ -1,17 +1,13 @@
 import numpy as np
 
-from sklearn.preprocessing import StandardScaler
 from preprocessing import (
     load_and_normalize_wav,
     extract_overlapping_segments,
     extract_mfcc_features,
     extract_mel_spectrogram,
 )
-from torch.utils.data import WeightedRandomSampler
-
-from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 
 def load_data_and_extract_features(
@@ -224,45 +220,4 @@ def balance_training_data(X_train, y_train):
     return X_res, y_res
 
 
-def make_weighted_sampler(y_train_enc):
-    from sampling import make_weighted_sampler as _make
-
-    return _make(y_train_enc)
-
-
-def standardize_features(X_train, X_test):
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-    return X_train_scaled, X_test_scaled, scaler
-
-
-def merge_events(preds):
-    from utils.events import merge_events as _merge
-
-    return _merge(preds)
-
-
-def evaluate_model(clf, X_test, y_test):
-    from evaluation import evaluate_model as _eval
-
-    return _eval(clf, X_test, y_test)
-
-
-def plot_roc_curve(y_true, y_scores, classes):
-    from evaluation import plot_roc_curve as _roc
-
-    return _roc(y_true, y_scores, classes)
-
-
-def plot_confusion_and_roc(y_true, y_scores, classes, save_path=None, show=True):
-    from evaluation import plot_confusion_and_roc as _combo
-
-    return _combo(y_true, y_scores, classes, save_path=save_path, show=show)
-
-
-from modeling.cnn import BowelSoundCNN
-
-
-# Dataset class for PyTorch
-from datasets import SpectrogramDataset
+# Note: This module intentionally provides only orchestration utilities.

@@ -164,13 +164,64 @@ def assign_window_labels_from_annotations(times, ann_df, known_classes):
     return labels
 
 
-def extract_mfcc_features(segment, sample_rate):
-    mfcc = librosa.feature.mfcc(y=segment, sr=sample_rate, n_mfcc=13)
-    zcr = librosa.feature.zero_crossing_rate(segment)
-    features = np.hstack(
-        [np.mean(mfcc, axis=1), np.std(mfcc, axis=1), np.mean(zcr), np.std(zcr)]
+def extract_mfcc_features(segment, sample_rate, n_mfcc: int = 13):
+    """Compute MFCC-based features robustly for short windows.
+
+    Includes:
+    - MFCC (n_mfcc) mean/std
+    - Delta MFCC mean/std (width adjusted to available frames)
+    - Delta-Delta MFCC mean/std (same width)
+    - Zero-crossing rate mean/std
+    - RMS mean/std
+    """
+    seg_len = int(len(segment))
+    if seg_len < 2:
+        # Too short to compute meaningful features (n_mfcc*2*3 + ZCR(2) + RMS(2) = 82)
+        return np.zeros(82, dtype=np.float32)
+
+    # Choose safe analysis params to avoid n_fft warnings
+    n_fft_eff = int(2 ** np.floor(np.log2(max(2, seg_len))))
+    hop_length_eff = max(1, n_fft_eff // 4)
+
+    # Core MFCCs and their deltas
+    mfcc = librosa.feature.mfcc(
+        y=segment,
+        sr=sample_rate,
+        n_mfcc=n_mfcc,
+        n_fft=n_fft_eff,
+        hop_length=hop_length_eff,
     )
-    return features
+    T = mfcc.shape[1]
+    if T >= 3:
+        # width must be odd and <= T
+        width = min(9, T if (T % 2 == 1) else T - 1)
+        if width < 3:
+            width = 3
+        d1 = librosa.feature.delta(mfcc, width=width)
+        d2 = librosa.feature.delta(mfcc, order=2, width=width)
+    else:
+        d1 = np.zeros_like(mfcc)
+        d2 = np.zeros_like(mfcc)
+
+    # Time-domain features aligned to same framing
+    zcr = librosa.feature.zero_crossing_rate(
+        segment, frame_length=n_fft_eff, hop_length=hop_length_eff
+    )
+    rms = librosa.feature.rms(
+        y=segment, frame_length=n_fft_eff, hop_length=hop_length_eff
+    )
+
+    def mean_std(arr: np.ndarray, axis: int = 1) -> np.ndarray:
+        return np.hstack([np.mean(arr, axis=axis), np.std(arr, axis=axis)])
+
+    features_list = [
+        mean_std(mfcc),
+        mean_std(d1),
+        mean_std(d2),
+        mean_std(zcr, axis=1),
+        mean_std(rms, axis=1),
+    ]
+    return np.hstack(features_list).astype(np.float32)
 
 
 def extract_mel_spectrogram(

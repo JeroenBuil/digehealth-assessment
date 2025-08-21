@@ -9,10 +9,12 @@ import torch
 from torch.utils.data import DataLoader
 import typer
 from loguru import logger
+import matplotlib.pyplot as plt
 
 from config import MODELS_DIR, PROCESSED_DATA_DIR, FIGURES_DIR, EXTERNAL_DATA_DIR
-from ml_pipeline import BowelSoundCNN, plot_confusion_and_roc
-from datasets import SpectrogramDataset
+from evaluation import plot_confusion_and_roc
+from modeling.cnn import BowelSoundCNN
+from modeling.datasets import SpectrogramDataset, pad_collate_spectrograms
 from preprocessing import (
     load_and_normalize_wav,
     extract_mel_spectrogram,
@@ -20,15 +22,12 @@ from preprocessing import (
     assign_window_labels_from_annotations,
     extract_overlapping_windows,
 )
-from utils.events import (
-    merge_events,
-    enforce_non_overlapping,
-    build_non_overlapping_events_from_windows,
-)
 from utils.model_utils import parse_window_from_model_name, align_classes_to_logits
 from utils.io import write_events_txt
+from utils.events import build_events_from_label_changes, _plot_events_section
 
 app = typer.Typer()
+
 
 
 @app.command()
@@ -98,7 +97,9 @@ def predict(
         return
 
     dataset = SpectrogramDataset(specs, np.zeros(len(specs), dtype=np.int64))
-    loader = DataLoader(dataset, batch_size=64, shuffle=False)
+    loader = DataLoader(
+        dataset, batch_size=64, shuffle=False, collate_fn=pad_collate_spectrograms
+    )
 
     logger.info("Running model inference...")
     all_preds: List[int] = []
@@ -115,24 +116,12 @@ def predict(
     # Align class names to model's output dimension dynamically
     classes = align_classes_to_logits(classes, all_probs)
 
-    # Map indices to labels and assemble events
-    idx_to_label = {i: lbl for i, lbl in enumerate(classes)}
-    # Build strictly non-overlapping events using class priority
-    probs_arr = np.vstack(all_probs) if len(all_probs) else None
-    events_merged = build_non_overlapping_events_from_windows(
-        times=times,
-        preds=all_preds,
-        classes=classes,
-        hop_sec=hop_sec,
-        probs=probs_arr,
-    )
+    # Build events by label-change runs (simple, non-overlapping)
+    events = build_events_from_label_changes(times, all_preds, classes)
 
     # Write outputs (TXT)
     output_txt.parent.mkdir(parents=True, exist_ok=True)
-    write_events_txt(output_txt, events_merged)
-
-    # Build events dataframe in-memory for plotting only
-    df_events = pd.DataFrame(events_merged, columns=["start", "end", "predicted"])
+    write_events_txt(output_txt, events)
 
     # Evaluate with confusion matrix + ROC if annotations are available
     ann_path = annotation_path or audio_path.with_suffix(".txt")
@@ -154,23 +143,18 @@ def predict(
         plot_confusion_and_roc(y_true, y_scores, classes, save_path=fig_path, show=True)
         logger.info(f"Saved evaluation figure: {fig_path}")
 
-        # Single timeline plot via evaluation utility (GT lines + predicted markers, red overlay for mismatch)
-        from evaluation import plot_timeline_with_correctness
-
-        fig, ax = plot_timeline_with_correctness(
-            times=times,
-            predicted_indices=all_preds,
-            classes=classes,
-            merged_events_df=df_events,
-            y_true_labels=y_true_labels,
+        # 15s events comparison plot (GT vs Pred)
+        compare_path = FIGURES_DIR / f"{model_path.stem}_events_compare.png"
+        _plot_events_section(
             ann_df=ann_df,
-            max_seconds=30.0,
-            save_path=FIGURES_DIR / f"{model_path.stem}_timeline.png",
+            pred_events=events,
+            classes=classes,
+            start=0.0,
+            duration=15.0,
+            save_path=compare_path,
             show=True,
         )
-        logger.info(
-            f"Saved timeline plot: {FIGURES_DIR / f'{model_path.stem}_timeline.png'}"
-        )
+        logger.info(f"Saved events comparison plot: {compare_path}")
 
     logger.success(f"Wrote predictions TXT: {output_txt}")
 
@@ -182,7 +166,7 @@ if __name__ == "__main__":
     # Hardcoded defaults for simple script execution
     default_audio = EXTERNAL_DATA_DIR / "Tech Test" / "23M74M.wav"
     default_ann = EXTERNAL_DATA_DIR / "Tech Test" / "23M74M.txt"
-    default_model = MODELS_DIR / "bowel_sound_cnn_win0.3_overlap0.75.pth"
+    default_model = MODELS_DIR / "bowel_sound_cnn_win0.2_overlap0.5.pth"
 
     predict(
         audio_path=default_audio,

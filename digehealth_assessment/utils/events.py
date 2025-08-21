@@ -1,162 +1,124 @@
-from typing import List, Tuple, Optional
-import numpy as np
+from typing import List, Tuple
 
 
-def merge_events(preds: List[Tuple[float, float, str]]):
-    if not preds:
-        return []
-    merged: List[Tuple[float, float, str]] = []
-    cur_start, cur_end, cur_class = preds[0]
-    for start, end, cls in preds[1:]:
-        if cls == cur_class:
-            cur_end = max(cur_end, end)
-        else:
-            # Ensure no overlap: next start should not be < current end
-            if start < cur_end:
-                start = cur_end
-            merged.append((cur_start, cur_end, cur_class))
-            cur_start, cur_end, cur_class = start, end, cls
-    merged.append((cur_start, cur_end, cur_class))
-    return merged
-
-
-def enforce_non_overlapping(events: List[Tuple[float, float, str]]):
-    """Force non-overlapping, contiguous events by clamping each start to prev end.
-
-    Also enforces end >= start.
-    """
-    if not events:
-        return []
-    adjusted: List[Tuple[float, float, str]] = []
-    prev_end = events[0][0]
-    for start, end, label in events:
-        start = max(start, prev_end)
-        end = max(end, start)
-        adjusted.append((start, end, label))
-        prev_end = end
-    return adjusted
-
-
-def _label_priority(label: str) -> int:
-    if label in ("b", "mb", "h"):
-        return 3
-    if label == "n":
-        return 2
-    if label == "silence":
-        return 1
-    return 0
-
-
-def build_non_overlapping_events_from_windows(
-    times: List[Tuple[float, float]],
-    preds: List[int],
-    classes: List[str],
-    hop_sec: float,
-    probs: Optional[np.ndarray] = None,
+def build_events_from_label_changes(
+    times: List[Tuple[float, float]], preds: List[int], classes: List[str]
 ) -> List[Tuple[float, float, str]]:
-    """Convert overlapping window predictions into non-overlapping events using priority.
+    """Build events by grouping consecutive identical labels.
 
-    - Builds a time grid in steps of hop_sec
-    - For each slice [t, t+hop_sec], chooses a label among overlapping windows:
-      priority b/mb/h > n > silence; tie-breaker uses per-class probability if provided,
-      otherwise nearest window center to slice center.
-    - Merges adjacent slices of same label into continuous events.
+    Uses the start time of each window as the event boundary.
+    Event start = start of first window in the run; event end = end of last window in the run.
     """
-    if not times:
+    if not times or not preds:
         return []
-    t_start = times[0][0]
-    t_end = max(e for _, e in times)
-    # Safety for hop_sec
-    if hop_sec <= 0:
-        # Fallback to min distance between starts
-        hop_candidates = np.diff([s for s, _ in times])
-        hop_sec = (
-            float(np.median(hop_candidates))
-            if len(hop_candidates)
-            else (times[0][1] - times[0][0])
-        )
+    assert len(times) == len(preds)
 
-    idx_to_label = {i: lbl for i, lbl in enumerate(classes)}
     events: List[Tuple[float, float, str]] = []
+    current_label = preds[0]
+    current_start = times[0][0]
 
-    t = t_start
-    while t < t_end - 1e-9:
-        seg_start = t
-        seg_end = min(t + hop_sec, t_end)
-        seg_center = 0.5 * (seg_start + seg_end)
-        # Find overlapping windows
-        overlapping = [
-            i for i, (s, e) in enumerate(times) if e > seg_start and s < seg_end
-        ]
-        if not overlapping:
-            label = (
-                "silence"
-                if "silence" in classes
-                else ("n" if "n" in classes else classes[0])
-            )
-        else:
-            # Build candidate labels with priority
-            candidates = {}
-            for i in overlapping:
-                lbl = idx_to_label.get(preds[i], classes[0])
-                pr = _label_priority(lbl)
-                if lbl not in candidates or pr > candidates[lbl]["priority"]:
-                    # Store best priority and a score for tie-break
-                    score = None
-                    if probs is not None and 0 <= preds[i] < probs.shape[1]:
-                        score = float(probs[i, preds[i]])
-                    # distance tie-break as negative distance (so larger is better when None score)
-                    dist = -abs(((times[i][0] + times[i][1]) * 0.5) - seg_center)
-                    candidates[lbl] = {"priority": pr, "score": score, "dist": dist}
-                else:
-                    # Update tie-breakers
-                    if probs is not None and 0 <= preds[i] < probs.shape[1]:
-                        candidates[lbl]["score"] = max(
-                            (
-                                candidates[lbl]["score"]
-                                if candidates[lbl]["score"] is not None
-                                else -np.inf
-                            ),
-                            float(probs[i, preds[i]]),
-                        )
-                    dist = -abs(((times[i][0] + times[i][1]) * 0.5) - seg_center)
-                    candidates[lbl]["dist"] = max(candidates[lbl]["dist"], dist)
+    for i in range(1, len(preds)):
+        if preds[i] != current_label:
+            # Close previous run at the end of the previous window
+            prev_end = times[i - 1][1]
+            events.append((current_start, prev_end, classes[current_label]))
+            # Start new run
+            current_label = preds[i]
+            current_start = times[i][0]
 
-            # Choose best label by priority, then by probability score, then by proximity
-            best = None
-            for lbl, meta in candidates.items():
-                key = (
-                    meta["priority"],
-                    meta["score"] if meta["score"] is not None else -np.inf,
-                    meta["dist"],
-                )
-                if best is None or key > best[0]:
-                    best = (key, lbl)
-            label = best[1] if best else classes[0]
-
-        if not events or events[-1][2] != label:
-            events.append((seg_start, seg_end, label))
-        else:
-            # extend
-            events[-1] = (events[-1][0], seg_end, label)
-        t = seg_end
-
+    # Close final run
+    final_end = times[-1][1]
+    events.append((current_start, final_end, classes[current_label]))
     return events
 
 
-def _merge_adjacent_events(
-    events: List[Tuple[float, float, str]],
-) -> List[Tuple[float, float, str]]:
-    if not events:
-        return []
-    merged: List[Tuple[float, float, str]] = []
-    cur_start, cur_end, cur_label = events[0]
-    for start, end, label in events[1:]:
-        if label == cur_label:
-            # Extend current event if the label stays the same
-            cur_end = max(cur_end, end)
-        else:
-            merged.append((cur_start, cur_end, cur_label))
-            cur_start, cur_end, cur_label = start, end, label
-    merged.append((cur_start, cur_end, cur_label))
-    return merged
+def _plot_events_section(
+    ann_df: pd.DataFrame,
+    pred_events: List[Tuple[float, float, str]],
+    classes: List[str],
+    start: float = 0.0,
+    duration: float = 15.0,
+    save_path: Path | None = None,
+    show: bool = True,
+) -> None:
+    """Plot a comparison of annotated (GT) vs predicted events over a time section."""
+    end = start + duration
+
+    # Prepare and clip annotation events
+    ann_clip = ann_df[(ann_df["end"] > start) & (ann_df["start"] < end)].copy()
+    if len(ann_clip) > 0:
+        ann_clip.loc[:, "start"] = ann_clip["start"].clip(lower=start)
+        ann_clip.loc[:, "end"] = ann_clip["end"].clip(upper=end)
+
+    # Prepare and clip predicted events
+    pred_clip: List[Tuple[float, float, str]] = []
+    for s, e, lbl in pred_events:
+        if e > start and s < end:
+            pred_clip.append((max(s, start), min(e, end), lbl))
+
+    # Colors by class
+    label_order = classes
+    base_colors = {cls: plt.cm.tab10(i % 10) for i, cls in enumerate(label_order)}
+    pred_colors = dict(base_colors)
+    if "silence" in pred_colors:
+        pred_colors["silence"] = (
+            0.9,
+            0.9,
+            0.9,
+            1.0,
+        )  # very light grey for predicted silence
+
+    fig, axes = plt.subplots(
+        2, 1, figsize=(14, 3.6), sharex=True, constrained_layout=False
+    )
+
+    # Top: Annotations (filled bands)
+    axes[0].set_title("Annotated events (GT)")
+    for _, row in ann_clip.iterrows():
+        lbl = row["label"] if row["label"] in base_colors else label_order[0]
+        axes[0].axvspan(
+            float(row["start"]),
+            float(row["end"]),
+            ymin=0.15,
+            ymax=0.85,
+            facecolor=base_colors.get(lbl, "k"),
+            edgecolor=base_colors.get(lbl, "k"),
+            alpha=0.7,
+        )
+    axes[0].set_yticks([])
+    axes[0].set_xlim(start, end)
+    axes[0].grid(True, axis="x", alpha=0.2)
+
+    # Bottom: Predictions (filled bands)
+    axes[1].set_title("Predicted events")
+    for s, e, lbl in pred_clip:
+        color = pred_colors.get(lbl, "k")
+        axes[1].axvspan(
+            float(s),
+            float(e),
+            ymin=0.15,
+            ymax=0.85,
+            facecolor=color,
+            edgecolor=color,
+            alpha=0.7,
+        )
+    axes[1].set_yticks([])
+    axes[1].set_xlabel("Time (s)")
+    axes[1].set_xlim(start, end)
+    axes[1].grid(True, axis="x", alpha=0.2)
+
+    # Legend (compact) based on GT colors
+    handles = [plt.Line2D([0], [0], color=base_colors[c], lw=10) for c in label_order]
+    axes[0].legend(handles, label_order, loc="upper right", frameon=False, fontsize=9)
+
+    # Reduce whitespace around the figure
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.88, right=0.98, left=0.06, bottom=0.16, hspace=0.35)
+
+    if save_path is not None:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, bbox_inches="tight", dpi=150)
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)

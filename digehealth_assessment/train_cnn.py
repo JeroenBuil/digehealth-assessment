@@ -18,13 +18,11 @@ from ml_pipeline import (
     load_blocked_split_features,
     print_class_distribution,
     balance_training_data,
-    evaluate_model,
-    make_weighted_sampler,
-    plot_roc_curve,
-    plot_confusion_and_roc,
 )
+from sampling import make_weighted_sampler
+from evaluation import plot_confusion_and_roc
 from modeling.cnn import BowelSoundCNN
-from datasets import SpectrogramDataset, pad_collate_spectrograms
+from modeling.datasets import SpectrogramDataset, pad_collate_spectrograms
 
 file_pairs = [
     (
@@ -39,7 +37,7 @@ file_pairs = [
 
 allowed_labels = ["b", "mb", "h", "n", "silence"]
 
-window_size_sec = 0.2  # Size of each segment in seconds
+window_size_sec = 0.15  # Size of each segment in seconds
 window_overlap = 0.5  # Overlap between segments as a fraction of window size
 
 retrain_model = True  # Set to False to evaluate an existing model
