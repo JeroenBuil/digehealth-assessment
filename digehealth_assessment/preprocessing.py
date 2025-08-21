@@ -73,15 +73,95 @@ def extract_overlapping_segments(
                 # If only one annotation overlaps, use its label
                 label = overlaps.iloc[0]["label"]
             else:
-                # Assign label of annotation whose center is closest to segment center
+                # Prefer b/mb/h over n over silence; tie-break by center proximity
+                def _priority(lbl: str) -> int:
+                    if lbl in ("b", "mb", "h"):
+                        return 3
+                    if lbl == "n":
+                        return 2
+                    if lbl == "silence":
+                        return 1
+                    return 0
+
                 seg_center = (seg_start_time + seg_end_time) / 2
                 centers = (overlaps["start"].values + overlaps["end"].values) / 2
-                center_dists = np.abs(centers - seg_center)
-                label = overlaps.iloc[center_dists.argmin()]["label"]
+                # Compute per-row priority then choose best; if tie, closest center wins
+                prios = overlaps["label"].apply(_priority).values
+                best_prio = prios.max()
+                candidate_idx = np.where(prios == best_prio)[0]
+                if len(candidate_idx) == 1:
+                    chosen = candidate_idx[0]
+                else:
+                    candidate_centers = centers[candidate_idx]
+                    chosen_rel = np.abs(candidate_centers - seg_center).argmin()
+                    chosen = candidate_idx[chosen_rel]
+                label = overlaps.iloc[chosen]["label"]
         # Append the segment and its label
         segments.append(segment)
         labels.append(label)
     return segments, labels
+
+
+def extract_overlapping_windows(wav_path, window_size_sec=0.5, window_overlap=0.75):
+    """Extract overlapping fixed-size windows and their [start,end] times from audio.
+
+    This does not require annotations and is suitable for inference.
+    Returns:
+        segments (list[np.ndarray]), times (list[tuple[float,float]]), sample_rate (int), hop_sec (float)
+    """
+    y, sample_rate = load_and_normalize_wav(wav_path)
+    n_samples = len(y)
+    win_length = int(window_size_sec * sample_rate)
+    hop_length = int(window_overlap * window_size_sec * sample_rate)
+    segments = []
+    times = []
+    for start in range(0, max(0, n_samples - win_length + 1), hop_length):
+        segment = y[start : start + win_length]
+        segments.append(segment)
+        times.append((start / sample_rate, (start + win_length) / sample_rate))
+    hop_sec = hop_length / sample_rate
+    return segments, times, sample_rate, hop_sec
+
+
+def assign_window_labels_from_annotations(times, ann_df, known_classes):
+    """Assign a label to each window [start,end] using center-closest strategy.
+
+    Falls back to 'silence' if no overlap or unknown label.
+    """
+    labels = []
+    for s, e in times:
+        overlaps = ann_df[(ann_df["end"] > s) & (ann_df["start"] < e)].copy()
+        if overlaps.empty:
+            label = "silence"
+        else:
+            if len(overlaps) == 1:
+                label = overlaps.iloc[0]["label"]
+            else:
+                # Prefer b/mb/h over n over silence; tie-break by center proximity
+                def _priority(lbl: str) -> int:
+                    if lbl in ("b", "mb", "h"):
+                        return 3
+                    if lbl == "n":
+                        return 2
+                    if lbl == "silence":
+                        return 1
+                    return 0
+
+                seg_center = (s + e) / 2
+                centers = (overlaps["start"].values + overlaps["end"].values) / 2
+                prios = overlaps["label"].apply(_priority).values
+                best_prio = prios.max()
+                candidate_idx = np.where(prios == best_prio)[0]
+                if len(candidate_idx) == 1:
+                    chosen = candidate_idx[0]
+                else:
+                    candidate_centers = centers[candidate_idx]
+                    chosen_rel = np.abs(candidate_centers - seg_center).argmin()
+                    chosen = candidate_idx[chosen_rel]
+                label = overlaps.iloc[chosen]["label"]
+        label = label if label in known_classes else "silence"
+        labels.append(label)
+    return labels
 
 
 def extract_mfcc_features(segment, sample_rate):
@@ -94,7 +174,7 @@ def extract_mfcc_features(segment, sample_rate):
 
 
 def extract_mel_spectrogram(
-    segment, sample_rate, n_mels=128, n_fft=2048, hop_length=512, max_len=30
+    segment, sample_rate, n_mels=128, n_fft=None, hop_length=None, max_len=None
 ):
     """Extracts a log-mel spectrogram from an audio segment.
     Args:
@@ -107,22 +187,39 @@ def extract_mel_spectrogram(
     Returns:
         log_mel_spec (np.ndarray): Log-mel spectrogram of shape (n_mels, max_len).
     """
+    # Choose a safe n_fft/hop_length for short segments
+    seg_len = int(len(segment))
+    if n_fft is None or (isinstance(n_fft, int) and n_fft > seg_len):
+        if seg_len < 2:
+            # Too short to compute FFT; return a zero spectrogram
+            log_mel_spec = np.zeros((n_mels, max_len), dtype=np.float32)
+            return log_mel_spec
+        # Use largest power of two <= segment length (typical for FFT)
+        n_fft_eff = int(2 ** np.floor(np.log2(seg_len)))
+    else:
+        n_fft_eff = int(n_fft)
+
+    hop_length_eff = max(1, n_fft_eff // 4) if hop_length is None else int(hop_length)
+
     mel_spec = librosa.feature.melspectrogram(
         y=segment,
         sr=sample_rate,
         n_mels=n_mels,
-        n_fft=n_fft,
-        hop_length=hop_length,
+        n_fft=n_fft_eff,
+        hop_length=hop_length_eff,
         power=2.0,
     )
     log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
 
-    # Pad or truncate
-    if log_mel_spec.shape[1] < max_len:
-        pad_width = max_len - log_mel_spec.shape[1]
-        log_mel_spec = np.pad(log_mel_spec, ((0, 0), (0, pad_width)), mode="constant")
-    else:
-        log_mel_spec = log_mel_spec[:, :max_len]
+    # Optionally pad or truncate to a fixed width if max_len is provided
+    if max_len is not None:
+        if log_mel_spec.shape[1] < max_len:
+            pad_width = max_len - log_mel_spec.shape[1]
+            log_mel_spec = np.pad(
+                log_mel_spec, ((0, 0), (0, pad_width)), mode="constant"
+            )
+        else:
+            log_mel_spec = log_mel_spec[:, :max_len]
 
     # Normalize (zero mean, unit variance)
     log_mel_spec = (log_mel_spec - np.mean(log_mel_spec)) / (

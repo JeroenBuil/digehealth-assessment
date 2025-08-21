@@ -1,6 +1,6 @@
 # DigeHealth Assessment
 
-Jeroen Buil's submission for the coding assessment for the ML Engineer at DigeHealth, focusing on bowel movement classification using machine learning approaches.
+My's submission for the coding assessment for the ML Engineer at DigeHealth, focusing on bowel movement classification using machine learning approaches.
 
 <a target="_blank" href="https://cookiecutter-data-science.drivendata.org/">
     <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
@@ -18,7 +18,7 @@ The model should identify the start time, end time and type of each bowel sound.
 
 The assignment includes, explorative data analysis, and several machine learning approaches to tackle this challenge.
 
-## Quick Start
+## ⚙️ Quick Start
 
 ### Prerequisites
 
@@ -43,9 +43,9 @@ The assignment includes, explorative data analysis, and several machine learning
    pip install -e .
    ```
 
-## Data
+## 💾 Data
 
-**IMPORTANT**: All analyses in this project rely on the 'Tech Test' dataset supplied by DigHelath, which is **NOT INCLUDED** in this repository.
+**IMPORTANT**: All analyses in this project rely on the 'Tech Test' dataset supplied by DigHealth, which is **NOT INCLUDED** in this repository.
 
 ### Required Data Setup
 

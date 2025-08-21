@@ -7,11 +7,11 @@ from preprocessing import (
     extract_mfcc_features,
     extract_mel_spectrogram,
 )
-import torch
-import torch.nn as nn
-from torch.utils.data import WeightedRandomSampler, Dataset
+from torch.utils.data import WeightedRandomSampler
 
 from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import roc_curve, auc
+import matplotlib.pyplot as plt
 
 
 def load_data_and_extract_features(
@@ -54,12 +54,11 @@ def load_data_and_extract_features(
             for seg, sr in zip(all_segments, all_sample_rates)
         ]
     elif feature_type == "spectrogram":
-        X = np.array(
-            [
-                extract_mel_spectrogram(seg, sample_rate=sr)
-                for seg, sr in zip(all_segments, all_sample_rates)
-            ]
-        )
+        # Keep variable-width spectrograms as a list; avoid global padding
+        X = [
+            extract_mel_spectrogram(seg, sample_rate=sr, max_len=None)
+            for seg, sr in zip(all_segments, all_sample_rates)
+        ]
     else:
         raise ValueError(
             f"Invalid feature_type: {feature_type}. Must be 'mfcc' or 'spectrogram'."
@@ -68,6 +67,109 @@ def load_data_and_extract_features(
     y = all_labels
 
     return X, y
+
+
+def load_blocked_split_features(
+    file_pairs: list,
+    allowed_labels: list,
+    feature_type: str,
+    window_size_sec: float = 1,
+    window_overlap: float = 0.75,
+    test_fraction: float = 0.2,
+    ensure_label_coverage: bool = True,
+):
+    """Load features and perform a time-ordered blocked split per file.
+
+    The last `test_fraction` of segments from each file become that file's test block,
+    keeping test segments consecutive in time. Optionally adjusts the split points to
+    include at least one instance of each present class in the overall test set.
+    """
+    assert 0.0 < test_fraction < 1.0
+
+    per_file_data = []
+    all_present_labels = set()
+
+    for wav_path, ann_path in file_pairs:
+        wav_y, sample_rate = load_and_normalize_wav(wav_path)
+        segments, labels = extract_overlapping_segments(
+            wav_path=wav_path,
+            annotation_path=ann_path,
+            window_size_sec=window_size_sec,
+            window_overlap=window_overlap,
+        )
+        # Normalize labels
+        labels = [label if label in allowed_labels else "n" for label in labels]
+        all_present_labels.update(labels)
+
+        # Extract features in time order
+        if feature_type == "mfcc":
+            X_file = [
+                extract_mfcc_features(seg, sample_rate=sample_rate) for seg in segments
+            ]
+        elif feature_type == "spectrogram":
+            # Keep per-file list of variable-width spectrograms
+            X_file = [
+                extract_mel_spectrogram(seg, sample_rate=sample_rate, max_len=None)
+                for seg in segments
+            ]
+        else:
+            raise ValueError(
+                f"Invalid feature_type: {feature_type}. Must be 'mfcc' or 'spectrogram'."
+            )
+
+        per_file_data.append(
+            {
+                "X": X_file,
+                "y": labels,
+            }
+        )
+
+    # Initial per-file split indices (keep last block for test)
+    split_indices = []
+    for item in per_file_data:
+        n = len(item["y"])
+        split_idx = max(0, min(n, int(round(n * (1.0 - test_fraction)))))
+        # Ensure at least one test sample if possible
+        if n > 0 and split_idx == n:
+            split_idx = n - 1
+        split_indices.append(split_idx)
+
+    def build_sets():
+        X_tr_list, y_tr_list, X_te_list, y_te_list = [], [], [], []
+        for item, split_idx in zip(per_file_data, split_indices):
+            X_file, y_file = item["X"], item["y"]
+            X_tr_list.append(X_file[:split_idx])
+            y_tr_list.extend(y_file[:split_idx])
+            X_te_list.append(X_file[split_idx:])
+            y_te_list.extend(y_file[split_idx:])
+        # Flatten lists without forcing into a numpy array to preserve variable widths
+        X_train = [item for sub in X_tr_list for item in sub]
+        X_test = [item for sub in X_te_list for item in sub]
+        return X_train, y_tr_list, X_test, y_te_list
+
+    # Optionally adjust split points to ensure label coverage in overall test set
+    if ensure_label_coverage and len(per_file_data) > 0:
+        _, _, _, y_test_tmp = build_sets()
+        test_present = set(y_test_tmp)
+        # Only try to cover labels that are present somewhere in the data
+        missing = [lbl for lbl in all_present_labels if lbl not in test_present]
+        if missing:
+            for missing_lbl in missing:
+                # Find a file containing the missing label
+                for idx, item in enumerate(per_file_data):
+                    y_file = item["y"]
+                    if missing_lbl in y_file:
+                        # Find last occurrence index of the label in that file
+                        last_idx = max(
+                            i for i, v in enumerate(y_file) if v == missing_lbl
+                        )
+                        # Ensure split index is at or before last occurrence to include it in test
+                        if last_idx < split_indices[idx]:
+                            split_indices[idx] = last_idx
+                        break
+
+    X_train, y_train, X_test, y_test = build_sets()
+    return X_train, y_train, X_test, y_test
 
 
 def print_class_distribution(y, title):
@@ -123,24 +225,9 @@ def balance_training_data(X_train, y_train):
 
 
 def make_weighted_sampler(y_train_enc):
-    """Create a WeightedRandomSampler for balancing classes in training data.
-    Args:
-        y_train_enc (np.ndarray): Encoded training labels.
-    Returns:
-        sampler (WeightedRandomSampler): Sampler for balancing classes.
-        y_train_enc (np.ndarray): Encoded training labels.
-    """
-    class_counts = np.bincount(y_train_enc)
-    class_weights = 1.0 / class_counts
-    sample_weights = class_weights[y_train_enc]
+    from sampling import make_weighted_sampler as _make
 
-    sampler = WeightedRandomSampler(
-        weights=sample_weights,
-        num_samples=len(sample_weights),
-        replacement=True,
-    )
-    return sampler, y_train_enc
-    return sampler, y_train_enc
+    return _make(y_train_enc)
 
 
 def standardize_features(X_train, X_test):
@@ -150,61 +237,32 @@ def standardize_features(X_train, X_test):
     return X_train_scaled, X_test_scaled, scaler
 
 
+def merge_events(preds):
+    from utils.events import merge_events as _merge
+
+    return _merge(preds)
+
+
 def evaluate_model(clf, X_test, y_test):
-    from sklearn.metrics import (
-        classification_report,
-        confusion_matrix,
-        ConfusionMatrixDisplay,
-    )
-    import matplotlib.pyplot as plt
+    from evaluation import evaluate_model as _eval
 
-    print("Evaluating model...")
-
-    y_pred = clf.predict(X_test)
-    print(classification_report(y_test, y_pred))
-    cm = confusion_matrix(y_test, y_pred, labels=clf.classes_)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=clf.classes_)
-    disp.plot()
-    plt.show()
+    return _eval(clf, X_test, y_test)
 
 
-class BowelSoundCNN(nn.Module):
-    def __init__(self, num_classes, input_shape):
-        super().__init__()
-        c, h, w = input_shape
-        self.features = nn.Sequential(
-            nn.Conv2d(c, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(64, 30, kernel_size=3, padding=1),
-            nn.BatchNorm2d(30),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1)),  # global pooling
-        )
-        self.classifier = nn.Sequential(
-            nn.Flatten(), nn.Dropout(0.5), nn.Linear(30, num_classes)
-        )
+def plot_roc_curve(y_true, y_scores, classes):
+    from evaluation import plot_roc_curve as _roc
 
-    def forward(self, x):
-        x = self.features(x)
-        x = self.classifier(x)
-        return x
+    return _roc(y_true, y_scores, classes)
+
+
+def plot_confusion_and_roc(y_true, y_scores, classes, save_path=None, show=True):
+    from evaluation import plot_confusion_and_roc as _combo
+
+    return _combo(y_true, y_scores, classes, save_path=save_path, show=show)
+
+
+from modeling.cnn import BowelSoundCNN
 
 
 # Dataset class for PyTorch
-class SpectrogramDataset(Dataset):
-    def __init__(self, X, y):
-        self.X = torch.tensor(X, dtype=torch.float32)
-        self.y = torch.tensor(y, dtype=torch.long)
-
-    # TODO: check if y needs to be long format
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
+from datasets import SpectrogramDataset
