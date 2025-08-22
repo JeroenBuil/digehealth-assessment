@@ -31,7 +31,7 @@ from training_config import (
     DEFAULT_CNN_BATCH_SIZE,
 )
 from modeling.cnn import BowelSoundCNN
-from modeling.datasets import SpectrogramDataset, pad_collate_spectrograms
+from modeling.datasets import SpectrogramDataset, collate_fixed_spectrograms
 from utils.model_utils import set_random_seeds
 
 
@@ -59,17 +59,6 @@ def main():
         ensure_label_coverage=DEFAULT_ENSURE_LABEL_COVERAGE,
     )
 
-    # import matplotlib.pyplot as plt
-    # fig, axes = plt.subplots(figsize=(12, 8))
-    # axes.imshow(
-    #             X_train[0],
-    #             aspect="auto",
-    #             origin="lower",
-    #             cmap="viridis",
-    #             vmin=-3,
-    #             vmax=3,  # Consistent color scale
-    #         )
-    
     print_class_distribution(y_train, "\nClass distribution in TRAIN set:")
     print_class_distribution(y_test, "\nClass distribution in Test set:")
 
@@ -88,15 +77,15 @@ def main():
         train_dataset,
         batch_size=DEFAULT_CNN_BATCH_SIZE,
         sampler=sampler,
-        collate_fn=pad_collate_spectrograms,
+        collate_fn=collate_fixed_spectrograms,
     )
     test_loader = DataLoader(
         test_dataset,
         batch_size=DEFAULT_CNN_BATCH_SIZE,
         shuffle=False,
-        collate_fn=pad_collate_spectrograms,
+        collate_fn=collate_fixed_spectrograms,
     )
-    
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_path = (
         MODELS_DIR / f"bowel_sound_cnn_win{window_size_sec}_overlap{window_overlap}.pth"
@@ -129,7 +118,7 @@ def main():
             "window_overlap": window_overlap,
             "feature_type": "spectrogram",
             "input_shape": sample_shape,
-            "le": le
+            "le": le,
         }
         save_model_checkpoint(model, model_path, metadata, model_type="cnn")
 

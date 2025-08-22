@@ -35,7 +35,7 @@ from training_config import (
     DEFAULT_LSTM_BIDIRECTIONAL,
 )
 from modeling.lstm import BowelSoundLSTM
-from modeling.datasets import SpectrogramDataset, pad_collate_spectrograms
+from modeling.datasets import SpectrogramDataset, collate_fixed_spectrograms
 from utils.model_utils import set_random_seeds
 
 
@@ -81,13 +81,13 @@ def main():
         train_dataset,
         batch_size=DEFAULT_LSTM_BATCH_SIZE,
         sampler=sampler,
-        collate_fn=pad_collate_spectrograms,
+        collate_fn=collate_fixed_spectrograms,
     )
     test_loader = DataLoader(
         test_dataset,
         batch_size=DEFAULT_LSTM_BATCH_SIZE,
         shuffle=False,
-        collate_fn=pad_collate_spectrograms,
+        collate_fn=collate_fixed_spectrograms,
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

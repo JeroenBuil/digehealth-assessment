@@ -7,8 +7,8 @@ from .cnn import (
     SELayer,
     TemporalAttention,
 )
-from .lstm import BowelSoundLSTM, BowelSoundLSTMWithFeatures
-from .datasets import SpectrogramDataset, pad_collate_spectrograms
+from .lstm import BowelSoundLSTM, BowelSoundLSTM
+from .datasets import SpectrogramDataset, collate_fixed_spectrograms
 
 __all__ = [
     "BowelSoundCNN",
@@ -17,7 +17,6 @@ __all__ = [
     "SELayer",
     "TemporalAttention",
     "BowelSoundLSTM",
-    "BowelSoundLSTMWithFeatures",
     "SpectrogramDataset",
-    "pad_collate_spectrograms",
+    "collate_fixed_spectrograms",
 ]

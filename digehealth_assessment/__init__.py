@@ -24,7 +24,7 @@ from . import modeling
 from . import utils
 
 # Training scripts
-from . import train_cnn
+from . import train_cnn_old
 from . import train_randomforest
 
 # Inference
@@ -43,7 +43,7 @@ __all__ = [
     "training_config",
     "modeling",
     "utils",
-    "train_cnn",
+    "train_cnn_old",
     "train_randomforest",
     "inference",
 ]

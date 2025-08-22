@@ -111,7 +111,7 @@ def _plot_events_section(
     axes[1].grid(True, axis="x", alpha=0.2)
 
     # Legend (compact) based on GT colors
-    handles = [plt.Line2D([0], [0], color=base_colors[c], lw=10) for c in label_order]
+    handles = [plt.Line2D([0], [0], color=pred_colors[c], lw=10) for c in label_order]
     axes[0].legend(handles, label_order, loc="upper right", frameon=False, fontsize=9)
 
     # Reduce whitespace around the figure

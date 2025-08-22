@@ -8,7 +8,7 @@ from .preprocessing import (
     load_and_normalize_wav,
     extract_overlapping_segments,
     extract_mfcc_features,
-    extract_mel_spectrogram,
+    extract_fixed_size_mel_spectrogram,
 )
 
 
@@ -16,7 +16,7 @@ def load_blocked_split_features(
     file_pairs: list,
     allowed_labels: list,
     feature_type: str,
-    window_size_sec: float = 1,
+    window_size_sec: float = 0.3,
     window_overlap: float = 0.5,
     test_fraction: float = 0.2,
     ensure_label_coverage: bool = True,
@@ -53,7 +53,13 @@ def load_blocked_split_features(
         elif feature_type == "spectrogram":
             # Keep per-file list of variable-width spectrograms
             X_file = [
-                extract_mel_spectrogram(seg, sample_rate=sample_rate, max_len=None)
+                extract_fixed_size_mel_spectrogram(
+                    seg,
+                    sample_rate=sample_rate,
+                    n_mels=40,
+                    target_frames=25,
+                    window_size_sec=window_size_sec,
+                )
                 for seg in segments
             ]
         else:
@@ -116,56 +122,56 @@ def load_blocked_split_features(
     return X_train, y_train, X_test, y_test
 
 
-def load_data_and_extract_features(
-    file_pairs: list,
-    allowed_labels: set,
-    feature_type: str,
-    window_size_sec: float = 1,
-    window_overlap: float = 0.75,
-    verbose=True,
-) -> Tuple[List, List]:
-    """Load and extract features from audio files."""
-    if feature_type not in ["mfcc", "spectrogram"]:
-        raise ValueError(
-            f"Invalid feature_type: {feature_type}. Must be 'mfcc' or 'spectrogram'."
-        )
+# def load_data_and_extract_features(
+#     file_pairs: list,
+#     allowed_labels: set,
+#     feature_type: str,
+#     window_size_sec: float = 1,
+#     window_overlap: float = 0.75,
+#     verbose=True,
+# ) -> Tuple[List, List]:
+#     """Load and extract features from audio files."""
+#     if feature_type not in ["mfcc", "spectrogram"]:
+#         raise ValueError(
+#             f"Invalid feature_type: {feature_type}. Must be 'mfcc' or 'spectrogram'."
+#         )
 
-    if verbose:
-        print("Loading and preparing data...")
+#     if verbose:
+#         print("Loading and preparing data...")
 
-    all_segments = []
-    all_labels = []
-    all_sample_rates = []
-    for wav_path, ann_path in file_pairs:
-        wav_y, sample_rate = load_and_normalize_wav(wav_path)
-        segments, labels = extract_overlapping_segments(
-            wav_path=wav_path,
-            annotation_path=ann_path,
-            window_size_sec=window_size_sec,
-            window_overlap=window_overlap,
-        )
-        all_segments.extend(segments)
-        all_labels.extend(labels)
-        all_sample_rates.extend([sample_rate] * len(segments))
+#     all_segments = []
+#     all_labels = []
+#     all_sample_rates = []
+#     for wav_path, ann_path in file_pairs:
+#         wav_y, sample_rate = load_and_normalize_wav(wav_path)
+#         segments, labels = extract_overlapping_segments(
+#             wav_path=wav_path,
+#             annotation_path=ann_path,
+#             window_size_sec=window_size_sec,
+#             window_overlap=window_overlap,
+#         )
+#         all_segments.extend(segments)
+#         all_labels.extend(labels)
+#         all_sample_rates.extend([sample_rate] * len(segments))
 
-    # Only keep allowed labels, convert others to 'n'
-    all_labels = [label if label in allowed_labels else "n" for label in all_labels]
+#     # Only keep allowed labels, convert others to 'n'
+#     all_labels = [label if label in allowed_labels else "n" for label in all_labels]
 
-    if feature_type == "mfcc":
-        X = [
-            extract_mfcc_features(seg, sample_rate=sr)
-            for seg, sr in zip(all_segments, all_sample_rates)
-        ]
-    elif feature_type == "spectrogram":
-        # Keep variable-width spectrograms as a list; avoid global padding
-        X = [
-            extract_mel_spectrogram(seg, sample_rate=sr, max_len=None)
-            for seg, sr in zip(all_segments, all_sample_rates)
-        ]
-    else:
-        raise ValueError(
-            f"Invalid feature_type: {feature_type}. Must be 'mfcc' or 'spectrogram'."
-        )
+#     if feature_type == "mfcc":
+#         X = [
+#             extract_mfcc_features(seg, sample_rate=sr)
+#             for seg, sr in zip(all_segments, all_sample_rates)
+#         ]
+#     elif feature_type == "spectrogram":
+#         # Keep variable-width spectrograms as a list; avoid global padding
+#         X = [
+#             extract_fixed_size_mel_spectrogram(seg, sample_rate=sr, max_len=None)
+#             for seg, sr in zip(all_segments, all_sample_rates)
+#         ]
+#     else:
+#         raise ValueError(
+#             f"Invalid feature_type: {feature_type}. Must be 'mfcc' or 'spectrogram'."
+#         )
 
-    y = all_labels
-    return X, y
+#     y = all_labels
+#     return X, y

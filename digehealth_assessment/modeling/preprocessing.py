@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 from utils.config import EXTERNAL_DATA_DIR
+import scipy.signal
 
 FALLBACK_LABEL = "silence"  # In case no annotations are present for a window, we assign a fallback label
 
@@ -128,6 +129,7 @@ def assign_window_labels_from_annotations(times, ann_df, known_classes):
 
     Falls back to 'silence' if no overlap or unknown label.
     """
+
     labels = []
     for s, e in times:
         overlaps = ann_df[(ann_df["end"] > s) & (ann_df["start"] < e)].copy()
@@ -164,7 +166,11 @@ def assign_window_labels_from_annotations(times, ann_df, known_classes):
     return labels
 
 
-def extract_mfcc_features(segment, sample_rate, n_mfcc: int = 13, ):
+def extract_mfcc_features(
+    segment,
+    sample_rate,
+    n_mfcc: int = 13,
+):
     """Compute MFCC-based features robustly for short windows.
 
     Includes:
@@ -222,6 +228,73 @@ def extract_mfcc_features(segment, sample_rate, n_mfcc: int = 13, ):
         mean_std(rms, axis=1),
     ]
     return np.hstack(features_list).astype(np.float32)
+
+
+def extract_fixed_size_mel_spectrogram(
+    segment,
+    sample_rate,
+    n_mels=25,
+    n_fft=None,
+    hop_length=None,
+    window_size_sec=0.5,
+    target_frames=25,
+):
+    """
+    Extract a log-mel spectrogram of fixed shape [n_mels, target_frames].
+
+    Args:
+        segment (np.ndarray): Audio segment.
+        sample_rate (int): Sample rate of the audio.
+        n_mels (int): Number of mel bands (default=25).
+        n_fft (int or None): FFT window size. If None, computed from window_size_sec.
+        hop_length (int or None): Hop length in samples. If None, set to n_fft // 4.
+        window_size_sec (float): Desired time window in seconds (0.1–1.0s typical).
+        target_frames (int): Number of frames in the output (default=25).
+
+    Returns:
+        log_mel_spec (np.ndarray): Normalized log-mel spectrogram of shape [n_mels, target_frames].
+    """
+    seg_len = len(segment)
+
+    # Handle very short segments
+    if seg_len < 2:
+        return np.zeros((n_mels, target_frames), dtype=np.float32)
+
+    # Determine FFT window size from window length
+    if n_fft is None:
+        n_fft_eff = int(window_size_sec * sample_rate)
+        n_fft_eff = max(16, n_fft_eff)  # avoid too small
+        n_fft_eff = 2 ** int(
+            np.floor(np.log2(n_fft_eff))
+        )  # largest power of 2 ≤ n_fft_eff
+    else:
+        n_fft_eff = int(n_fft)
+
+    # Determine hop length
+    hop_length_eff = hop_length if hop_length is not None else max(1, n_fft_eff // 4)
+
+    # Compute mel spectrogram
+    mel_spec = librosa.feature.melspectrogram(
+        y=segment,
+        sr=sample_rate,
+        n_mels=n_mels,
+        n_fft=n_fft_eff,
+        hop_length=hop_length_eff,
+        power=2.0,
+    )
+
+    # Convert to log scale
+    log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
+
+    # Resample time axis to exactly target_frames
+    log_mel_spec = scipy.signal.resample(log_mel_spec, target_frames, axis=1)
+
+    # Normalize (zero mean, unit variance)
+    log_mel_spec = (log_mel_spec - np.mean(log_mel_spec)) / (
+        np.std(log_mel_spec) + 1e-6
+    )
+
+    return log_mel_spec.astype(np.float32)
 
 
 def extract_mel_spectrogram(

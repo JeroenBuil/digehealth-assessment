@@ -12,10 +12,11 @@ from pathlib import Path
 from collections import defaultdict
 import random
 
+
 from modeling.preprocessing import (
     load_and_normalize_wav,
     extract_overlapping_segments,
-    extract_mel_spectrogram,
+    extract_fixed_size_mel_spectrogram,
 )
 from modeling.data_loading import load_blocked_split_features
 from utils.config import EXTERNAL_DATA_DIR, FIGURES_DIR
@@ -31,8 +32,9 @@ def plot_random_class_examples(
     allowed_labels,
     window_size_sec=0.3,
     window_overlap=0.5,
-    n_mels=13,
     n_example_per_class_per_file=20,
+    n_mels: int = 40,
+    target_frames: int = 25,
 ):
     """Plot random log mel spectrogram examples for each class."""
 
@@ -54,6 +56,7 @@ def plot_random_class_examples(
             wav_path,
             annotation_path,
             window_size_sec=window_size_sec,
+            window_overlap=window_overlap,
         )
 
         # Load sample rate for spectrogram generation
@@ -69,8 +72,12 @@ def plot_random_class_examples(
                 if len(segment) > 0:  # Skip empty segments
                     if label_counts[label] < n_example_per_class_per_file:
                         label_counts[label] += 1
-                        mel_spec = extract_mel_spectrogram(
-                            segment, sample_rate, n_mels=n_mels, hop_length=None
+                        mel_spec = extract_fixed_size_mel_spectrogram(
+                            segment,
+                            sample_rate,
+                            n_mels=n_mels,
+                            target_frames=25,
+                            window_size_sec=window_size_sec,
                         )
                         class_spectrograms[label].append(mel_spec)
 
@@ -112,8 +119,8 @@ def plot_random_class_examples(
             aspect="auto",
             origin="lower",
             cmap="viridis",
-            vmin=-3,
-            vmax=3,  # Consistent color scale
+            # vmin=-3,
+            # vmax=3,  # Consistent color scale
         )
 
         ax.set_title(
@@ -198,7 +205,9 @@ def plot_class_averages(class_spectrograms):
 
 
 # Example usage functions (can be imported and used elsewhere)
-def get_class_spectrograms(file_pairs, window_size_sec=0.3, n_mels=13):
+def get_class_spectrograms(
+    file_pairs, window_size_sec=0.3, n_mels: int = 13, target_frames: int = 25
+):
     """Get spectrograms organized by class."""
     class_spectrograms = defaultdict(list)
 
@@ -214,7 +223,9 @@ def get_class_spectrograms(file_pairs, window_size_sec=0.3, n_mels=13):
 
         for segment, label in zip(segments, labels):
             if len(segment) > 0:
-                mel_spec = extract_mel_spectrogram(segment, sample_rate, n_mels=n_mels)
+                mel_spec = extract_fixed_size_mel_spectrogram(
+                    segment, sample_rate, n_mels=n_mels, target_frames=target_frames
+                )
                 class_spectrograms[label].append(mel_spec)
 
     return dict(class_spectrograms)
@@ -259,7 +270,14 @@ def plot_single_class_comparison(class_spectrograms, class_name, n_examples=5):
     plt.show()
 
 
-def main_visualization(file_pairs: list, allowed_labels: list, n_mels: int = 13):
+def main_visualization(
+    file_pairs: list,
+    allowed_labels: list,
+    window_size_sec=0.3,
+    window_overlap=0.5,
+    n_mels: int = 40,
+    target_frames: int = 25,
+):
     """Main function to run the visualization."""
 
     # Set random seed for reproducible plots
@@ -270,7 +288,13 @@ def main_visualization(file_pairs: list, allowed_labels: list, n_mels: int = 13)
 
     # Plot random examples
     class_spectrograms = plot_random_class_examples(
-        file_pairs, allowed_labels, window_size_sec=0.3, n_mels=n_mels
+        file_pairs,
+        allowed_labels,
+        window_size_sec=window_size_sec,
+        window_overlap=window_overlap,
+        n_mels=n_mels,
+        target_frames=target_frames,
+        n_example_per_class_per_file=50,
     )
 
     # Plot class averages
@@ -292,6 +316,14 @@ if __name__ == "__main__":
         #     EXTERNAL_DATA_DIR / "Tech Test" / "23M74M.txt",
         # ),
     ]
+    window_size_sec = 0.3
+    window_overlap = 0.5
+
     main_visualization(
-        file_pairs=file_pairs, allowed_labels=DEFAULT_ALLOWED_LABELS, n_mels=52
+        file_pairs=file_pairs,
+        allowed_labels=DEFAULT_ALLOWED_LABELS,
+        n_mels=40,
+        target_frames=25,
+        window_size_sec=window_size_sec,
+        window_overlap=window_overlap,
     )

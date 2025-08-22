@@ -81,3 +81,38 @@ def pad_collate_spectrograms(batch):
     batch_x = torch.stack(padded, dim=0)
     batch_y = torch.tensor(ys, dtype=torch.long)
     return batch_x, batch_y
+
+
+def collate_fixed_spectrograms(batch):
+    """
+    Collate function for fixed-size spectrograms in list form.
+
+    Args:
+        batch: list of tuples (spectrogram [H, W], label)
+
+    Returns:
+        batch_x: torch.Tensor of shape [B, 1, H, W]
+        batch_y: torch.Tensor of shape [B]
+    """
+    xs, ys = zip(*batch)
+
+    # Ensure all spectrograms are tensors, float32, remove extra singleton dims
+    xs = [
+        (
+            x.detach().clone().squeeze().float()
+            if isinstance(x, torch.Tensor)
+            else torch.tensor(x, dtype=torch.float32)
+        )
+        for x in xs
+    ]
+
+    # Add channel dimension: [1, H, W]
+    xs = [x.unsqueeze(0) for x in xs]
+
+    # Stack into batch: [B, 1, H, W]
+    batch_x = torch.stack(xs, dim=0)
+
+    # Labels as tensor
+    batch_y = torch.tensor(ys, dtype=torch.long)
+
+    return batch_x, batch_y

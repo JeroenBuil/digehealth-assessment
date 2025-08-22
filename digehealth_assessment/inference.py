@@ -16,10 +16,10 @@ import matplotlib.pyplot as plt
 from utils.config import MODELS_DIR, PROCESSED_DATA_DIR, FIGURES_DIR, EXTERNAL_DATA_DIR
 from modeling.evaluation import plot_confusion_and_roc
 from modeling.cnn import BowelSoundCNN
-from modeling.datasets import SpectrogramDataset, pad_collate_spectrograms
+from modeling.datasets import SpectrogramDataset, collate_fixed_spectrograms
 from modeling.preprocessing import (
     load_and_normalize_wav,
-    extract_mel_spectrogram,
+    extract_fixed_size_mel_spectrogram,
     load_annotations,
     assign_window_labels_from_annotations,
     extract_overlapping_windows,
@@ -46,7 +46,7 @@ def load_model(model_path: Path, device: torch.device):
             window_size_sec = checkpoint["window_size_sec"]
             window_overlap = checkpoint["window_overlap"]
             feature_type = checkpoint["feature_type"]
-            
+
             # Load existing model
             model = BowelSoundCNN(
                 num_classes=len(le.classes_), input_shape=input_shape
@@ -79,14 +79,21 @@ def load_model(model_path: Path, device: torch.device):
 def run_cnn_inference(
     model: BowelSoundCNN,
     segments: List[np.ndarray],
-    times: List[Tuple[float, float]],
     device: torch.device,
+    sample_rate: int,
+    window_size_sec,
     batch_size: int = 64,
 ) -> Tuple[List[int], List[np.ndarray]]:
     """Run inference using a CNN model."""
     specs: List[np.ndarray] = [
-        extract_mel_spectrogram(seg, sample_rate=16000)
-        for seg in segments  # Assuming 16kHz
+        extract_fixed_size_mel_spectrogram(
+            seg,
+            n_mels=40,
+            target_frames=25,
+            sample_rate=sample_rate,
+            window_size_sec=window_size_sec,
+        )
+        for seg in segments
     ]
 
     if not specs:
@@ -98,7 +105,7 @@ def run_cnn_inference(
         dataset,
         batch_size=batch_size,
         shuffle=False,
-        collate_fn=pad_collate_spectrograms,
+        collate_fn=collate_fixed_spectrograms,
     )
 
     logger.info("Running CNN model inference...")
@@ -122,7 +129,7 @@ def run_random_forest_inference(
     model,
     scaler,
     segments: List[np.ndarray],
-    times: List[Tuple[float, float]],
+    sample_rate: int,
 ) -> Tuple[List[int], List[np.ndarray]]:
     """Run inference using a Random Forest model."""
     from modeling.preprocessing import extract_mfcc_features
@@ -130,9 +137,7 @@ def run_random_forest_inference(
     logger.info("Running Random Forest model inference...")
 
     # Extract MFCC features
-    specs = [
-        extract_mfcc_features(seg, sample_rate=16000) for seg in segments
-    ]  # Assuming 16kHz
+    specs = [extract_mfcc_features(seg, sample_rate=sample_rate) for seg in segments]
 
     if not specs:
         logger.warning("No segments were generated from the audio. Exiting.")
@@ -179,10 +184,19 @@ def predict(
 
     # Run inference based on model type
     if model_type == "cnn":
-        all_preds, all_probs = run_cnn_inference(model, segments, times, device)
+        all_preds, all_probs = run_cnn_inference(
+            model=model,
+            segments=segments,
+            device=device,
+            sample_rate=sample_rate,
+            window_size_sec=window_size_sec,
+        )
     elif model_type == "random_forest":
         all_preds, all_probs = run_random_forest_inference(
-            model, scaler, segments, times
+            model=model,
+            scaler=scaler,
+            segments=segments,
+            sample_rate=sample_rate,
         )
     else:
         raise ValueError(f"Unknown model type: {model_type}")
