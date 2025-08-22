@@ -58,6 +58,49 @@ The assignment includes, explorative data analysis, and several machine learning
 
 **Note**: Without this data, all scripts will fail with "file not found" errors.
 
+## 📊 Usage Examples
+
+### **Training Models**
+
+```bash
+# Train CNN with default settings
+python -m digehealth_assessment.train_cnn
+
+# Train LSTM with custom parameters
+python -m digehealth_assessment.train_lstm
+
+# Train Random Forest
+python -m digehealth_assessment.train_randomforest
+
+# Train improved CNN architectures
+python -m digehealth_assessment.train_cnn_v2
+```
+
+### **Testing Models**
+
+```bash
+# Test LSTM implementation
+python -m digehealth_assessment.test_lstm
+
+# Test CNN architectures
+python -m digehealth_assessment.test_cnn_v2
+```
+
+### **Data Visualization**
+
+```bash
+# Plot spectrograms for each class
+python -m digehealth_assessment.plot_class_spectrograms
+
+# Run exploratory data analysis
+jupyter notebook notebooks/Exploratory_Data_Analysis.ipynb
+```
+
+## ⚙️ Configuration
+
+### **Training Parameters**
+All training parameters are configurable in `digehealth_assessment/training_config.py`:
+
 ## Available Models
 
 ### 1. **CNN (Convolutional Neural Network)**
@@ -126,49 +169,6 @@ python -m digehealth_assessment.train_randomforest
 - **Confusion Matrices**: Visual class prediction analysis
 - **Training Curves**: Loss and accuracy progression
 - **Feature Analysis**: Random Forest feature importance plots
-
-## 📊 Usage Examples
-
-### **Training Models**
-
-```bash
-# Train CNN with default settings
-python -m digehealth_assessment.train_cnn
-
-# Train LSTM with custom parameters
-python -m digehealth_assessment.train_lstm
-
-# Train Random Forest
-python -m digehealth_assessment.train_randomforest
-
-# Train improved CNN architectures
-python -m digehealth_assessment.train_cnn_v2
-```
-
-### **Testing Models**
-
-```bash
-# Test LSTM implementation
-python -m digehealth_assessment.test_lstm
-
-# Test CNN architectures
-python -m digehealth_assessment.test_cnn_v2
-```
-
-### **Data Visualization**
-
-```bash
-# Plot spectrograms for each class
-python -m digehealth_assessment.plot_class_spectrograms
-
-# Run exploratory data analysis
-jupyter notebook notebooks/Exploratory_Data_Analysis.ipynb
-```
-
-## ⚙️ Configuration
-
-### **Training Parameters**
-All training parameters are configurable in `digehealth_assessment/training_config.py`:
 
 
 ## 📁 Project Structure
