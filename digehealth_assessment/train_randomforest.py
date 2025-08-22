@@ -75,6 +75,7 @@ def main():
         # Save the trained model with metadata for inference
         metadata = {
             "scaler": scaler,
+            "le": le,
             "classes": le.classes_.tolist(),
             "window_size_sec": window_size_sec,
             "window_overlap": window_overlap,
@@ -93,8 +94,9 @@ def main():
         checkpoint = pickle.load(open(model_path, "rb"))
         clf = checkpoint["model"]
         scaler = checkpoint["scaler"]
-        le = checkpoint["classes"]
-
+        le = checkpoint["le"]
+        classes = checkpoint["classes"]
+        
         # Transform test data
         X_test_array = np.array(X_test)
         X_test_scaled = scaler.transform(X_test_array)

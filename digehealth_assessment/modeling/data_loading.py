@@ -17,7 +17,7 @@ def load_blocked_split_features(
     allowed_labels: list,
     feature_type: str,
     window_size_sec: float = 1,
-    window_overlap: float = 0.75,
+    window_overlap: float = 0.5,
     test_fraction: float = 0.2,
     ensure_label_coverage: bool = True,
 ) -> Tuple[List, List, List, List]:
@@ -28,6 +28,7 @@ def load_blocked_split_features(
     include at least one instance of each present class in the overall test set.
     """
     assert 0.0 < test_fraction < 1.0
+    assert 0.0 < window_overlap < 1.0
 
     per_file_data = []
     all_present_labels = set()

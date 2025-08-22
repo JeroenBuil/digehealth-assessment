@@ -164,7 +164,7 @@ def assign_window_labels_from_annotations(times, ann_df, known_classes):
     return labels
 
 
-def extract_mfcc_features(segment, sample_rate, n_mfcc: int = 13):
+def extract_mfcc_features(segment, sample_rate, n_mfcc: int = 13, ):
     """Compute MFCC-based features robustly for short windows.
 
     Includes:

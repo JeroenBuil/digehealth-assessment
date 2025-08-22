@@ -59,6 +59,17 @@ def main():
         ensure_label_coverage=DEFAULT_ENSURE_LABEL_COVERAGE,
     )
 
+    # import matplotlib.pyplot as plt
+    # fig, axes = plt.subplots(figsize=(12, 8))
+    # axes.imshow(
+    #             X_train[0],
+    #             aspect="auto",
+    #             origin="lower",
+    #             cmap="viridis",
+    #             vmin=-3,
+    #             vmax=3,  # Consistent color scale
+    #         )
+    
     print_class_distribution(y_train, "\nClass distribution in TRAIN set:")
     print_class_distribution(y_test, "\nClass distribution in Test set:")
 
@@ -85,7 +96,7 @@ def main():
         shuffle=False,
         collate_fn=pad_collate_spectrograms,
     )
-
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_path = (
         MODELS_DIR / f"bowel_sound_cnn_win{window_size_sec}_overlap{window_overlap}.pth"
@@ -118,6 +129,7 @@ def main():
             "window_overlap": window_overlap,
             "feature_type": "spectrogram",
             "input_shape": sample_shape,
+            "le": le
         }
         save_model_checkpoint(model, model_path, metadata, model_type="cnn")
 
@@ -127,7 +139,7 @@ def main():
         model = BowelSoundCNN(
             num_classes=len(le.classes_), input_shape=sample_shape
         ).to(device)
-        loaded_obj = torch.load(model_path, map_location=device)
+        loaded_obj = torch.load(model_path, map_location=device, weights_only=False)
         if isinstance(loaded_obj, dict) and "state_dict" in loaded_obj:
             model.load_state_dict(loaded_obj["state_dict"])
         else:
