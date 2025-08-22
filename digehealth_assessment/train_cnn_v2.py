@@ -12,11 +12,11 @@ from torch.utils.data import DataLoader
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import classification_report
 
-from config import MODELS_DIR, FIGURES_DIR
+from utils.config import MODELS_DIR, FIGURES_DIR
 from pathlib import Path
-from data_loading import load_blocked_split_features
-from data_utils import print_class_distribution, make_weighted_sampler
-from model_training import (
+from modeling.data_loading import load_blocked_split_features
+from modeling.data_utils import print_class_distribution, make_weighted_sampler
+from modeling.model_training import (
     train_cnn_model,
     evaluate_cnn_model,
     save_model_checkpoint,

@@ -1,4 +1,4 @@
-"""Inference script for trained bowel sound classification models."""
+"""Inference script for trained bowel sound classification models. (only works with RandomForest and CNN (not v2/v3) for now)"""
 
 from pathlib import Path
 from typing import List, Tuple
@@ -13,11 +13,11 @@ import typer
 from loguru import logger
 import matplotlib.pyplot as plt
 
-from config import MODELS_DIR, PROCESSED_DATA_DIR, FIGURES_DIR, EXTERNAL_DATA_DIR
-from evaluation import plot_confusion_and_roc
+from utils.config import MODELS_DIR, PROCESSED_DATA_DIR, FIGURES_DIR, EXTERNAL_DATA_DIR
+from modeling.evaluation import plot_confusion_and_roc
 from modeling.cnn import BowelSoundCNN
 from modeling.datasets import SpectrogramDataset, pad_collate_spectrograms
-from preprocessing import (
+from modeling.preprocessing import (
     load_and_normalize_wav,
     extract_mel_spectrogram,
     load_annotations,
@@ -133,7 +133,7 @@ def run_random_forest_inference(
     times: List[Tuple[float, float]],
 ) -> Tuple[List[int], List[np.ndarray]]:
     """Run inference using a Random Forest model."""
-    from preprocessing import extract_mfcc_features
+    from modeling.preprocessing import extract_mfcc_features
 
     logger.info("Running Random Forest model inference...")
 

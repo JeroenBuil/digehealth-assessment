@@ -4,10 +4,10 @@ import numpy as np
 from sklearn.metrics import classification_report
 from pathlib import Path
 
-from config import MODELS_DIR, FIGURES_DIR
-from data_loading import load_blocked_split_features
-from data_utils import print_class_distribution
-from model_training import (
+from utils.config import MODELS_DIR, FIGURES_DIR
+from modeling.data_loading import load_blocked_split_features
+from modeling.data_utils import print_class_distribution
+from modeling.model_training import (
     train_random_forest_model,
     save_model_checkpoint,
     create_evaluation_plots,
@@ -24,11 +24,11 @@ from training_config import (
     DEFAULT_RF_N_ESTIMATORS,
     DEFAULT_RF_RANDOM_STATE,
 )
-from evaluation import build_mfcc_feature_names
+from modeling.evaluation import build_mfcc_feature_names
 from utils.model_utils import set_random_seeds
 
 
-def main(): 
+def main():
     """Main training function."""
     # Set random seeds for reproducible results
     set_random_seeds(seed=42)

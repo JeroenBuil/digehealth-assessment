@@ -5,16 +5,16 @@ for bowel sound classification from audio data.
 """
 
 # Core modules
-from . import config
-from . import preprocessing
-from . import evaluation
+from .utils import config
+from .modeling import preprocessing
+from .modeling import evaluation
 
 # Data handling
-from . import data_loading
-from . import data_utils
+from .modeling import data_loading
+from .modeling import data_utils
 
 # Model training
-from . import model_training
+from .modeling import model_training
 from . import training_config
 
 # Model definitions

@@ -58,7 +58,7 @@ The assignment includes, explorative data analysis, and several machine learning
 
 **Note**: Without this data, all scripts will fail with "file not found" errors.
 
-## 🧠 Available Models
+## Available Models
 
 ### 1. **CNN (Convolutional Neural Network)**
 - **Purpose**: Image-based classification using spectrogram representations
@@ -76,8 +76,8 @@ python -m digehealth_assessment.train_cnn_v2
 
 **Architecture Variants**:
 - **Original CNN**: Basic 3-layer convolutional network
-- **CNN v2**: Enhanced with Squeeze-Excitation blocks, temporal attention, residual connections
-- **CNN v3**: Alternative with dilated convolutions for larger receptive fields
+- **CNN v2 (not recommended)**: Enhanced with Squeeze-Excitation blocks, temporal attention, residual connections
+- **CNN v3 (not recommended)**: Alternative with dilated convolutions for larger receptive fields
 
 ### 2. **LSTM (Long Short-Term Memory)**
 - **Purpose**: Sequential modeling of temporal patterns in audio
@@ -175,21 +175,26 @@ All training parameters are configurable in `digehealth_assessment/training_conf
 
 ```
 digehealth-assessment/
-├── digehealth_assessment/          # Main source code
-│   ├── modeling/                   # Model architectures
-│   │   ├── cnn.py                 # CNN models (original, v2, v3)
-│   │   ├── lstm.py                # LSTM models
-│   │   └── datasets.py            # Data loading utilities
-│   ├── train_cnn.py               # CNN training script
-│   ├── train_lstm.py              # LSTM training script
-│   ├── train_randomforest.py      # Random Forest training
-│   ├── train_cnn_v2.py            # Enhanced CNN training
-│   ├── model_training.py          # Common training utilities
-│   ├── preprocessing.py            # Audio processing functions
-│   └── utils/                     # Utility functions
+├── digehealth_assessment/         <- Main source code
+│   ├── train_cnn.py               <- CNN training script
+│   ├── train_cnn.py               <- CNN training script
+│   ├── train_lstm.py              <- LSTM training script
+│   ├── train_randomforest.py      <- Random Forest training
+│   ├── train_cnn_v2.py            <- Enhanced CNN training
+│   ├── utils/                     <- Utility functions
+│   └── modeling/                  <- Model architectures
+│       ├── cnn.py                 <- CNN models (original, v2, v3)
+│       ├── lstm.py                <- LSTM models
+│       ├── data_loading.py        <- Data loading utilities
+│       ├── data_loading.py        <- Data utilities for balancing, sampling, and analysis
+│       ├── datasets.py            <- Pytorch Dataset configurations
+│       ├── evaluation.py          <- Model evaluation tools
+│       ├── preprocessing.py       <- Audio processing functions
+│       └── model_training.py      <- Common training utilities
 │
 ├── data/                          # Data directory
 │   └── external/                  # Placeholder for Tech Test dataset
+│   └── processed/                 # Destination of predicted annotations when running inference.py
 │
 ├── models/                         # Trained model checkpoints
 ├── notebooks/                      # Jupyter notebooks
@@ -202,15 +207,17 @@ digehealth-assessment/
 ## 🔍 Model Performance
 
 ### **Expected Results**
-- **CNN**: Typically achieves 60-80% accuracy depending on data quality
-- **LSTM**: Similar performance to CNN, better with longer sequences
+- **CNN**: Typically achieves 60-80% accuracy, works better with shorter windows (<=0.3s). Data quality seems to be the limiting factor
+- **LSTM**: Similar performance to CNN, works better with slightly longer window segments (~0.6s)
 - **Random Forest**: 50-70% accuracy, good baseline for comparison
+- **CNNv2/v3**: Similar performance to CNN, indicating the bottle neck is not the architecture, but the data quality
 
 ### **Performance Factors**
 - **Audio Quality**: Clear recordings produce better results
+- **Class Balance**: Imbalanced datasets require careful handling during training AND evaluating
 - **Label Quality**: Accurate annotations are crucial
 - **Feature Engineering**: Mel-spectrogram parameters significantly impact performance
-- **Class Balance**: Imbalanced datasets require careful handling
+
 
 ## 🛠️ Troubleshooting
 
@@ -231,41 +238,39 @@ digehealth-assessment/
    - Process data in smaller chunks
 
 ### **Getting Help**
-- Check the `notebooks/` folder for detailed analysis examples
 - Review generated plots in `reports/figures/` for insights
-- Examine training logs for convergence issues
+- Examine training logs for convergence issues (majority of models require 10-30 epochs to stabilize)
 
-## 🔬 Advanced Usage
+## Advanced Usage
 
 ### **Custom Model Architectures**
 Extend the existing models in `modeling/` directory:
-- Add new CNN layers in `cnn.py`
-- Implement attention mechanisms in `lstm.py`
-- Create custom feature extractors
+- Add new CNN architecture in `cnn.py`
+- Add new LSTM architeture in `lstm.py`
+- Create custom feature extractors in `preprocessing.py`
 
 ### **Hyperparameter Tuning**
 - Modify parameters in `training_config.py`
-- Implement grid search or Bayesian optimization
-- Use cross-validation for robust evaluation
+- Use cross-validation for robust evaluation 
 
 ### **Data Pipeline Customization**
 - Adjust audio processing in `preprocessing.py`
 - Modify feature extraction parameters
 - Implement custom data augmentation
 
-## 📈 Future Improvements
+## Future Improvements
 
-- **Ensemble Methods**: Combine multiple model predictions
-- **Advanced Augmentation**: Time-stretching, pitch shifting, noise injection
-- **Transfer Learning**: Pre-trained audio models (AudioSet, VGGish)
+- **Improved Noise reduction**: Further pre-processing to limit noise and equalize the sound file 
+- **Noise + Silence detector**: Two stage approach that first detects whether there is noise/silence reducing misclassification of the bowel movements.
+- **Transfer Learning**: Use pre-trained audio models (AudioSet, VGGish) and further tune it to the use-case data
 - **Real-time Processing**: Streaming audio classification
-- **Multi-modal Fusion**: Combine audio with other sensor data
+- **Multi-modal Fusion**: Combine audio with other sensor data (if available)
 
-## 📄 License
+## License
 
 This project is licensed under the terms specified in the LICENSE file.
 
 ## 🤝 Contributing
 
-This is a coding assessment submission. For questions or improvements, please refer to the original assignment requirements.
+This is a coding assessment submission. For questions, please contact Jeroen Buil.
 

@@ -1,7 +1,7 @@
 """Common training configuration parameters."""
 
 from pathlib import Path
-from config import EXTERNAL_DATA_DIR
+from utils.config import EXTERNAL_DATA_DIR
 
 # Common file pairs for training
 DEFAULT_FILE_PAIRS = [
