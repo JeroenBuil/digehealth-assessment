@@ -76,7 +76,7 @@ def plot_random_class_examples(
                             segment,
                             sample_rate,
                             n_mels=n_mels,
-                            target_frames=25,
+                            target_frames=target_frames,
                             window_size_sec=window_size_sec,
                         )
                         class_spectrograms[label].append(mel_spec)

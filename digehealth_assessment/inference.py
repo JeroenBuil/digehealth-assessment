@@ -48,9 +48,7 @@ def load_model(model_path: Path, device: torch.device):
             feature_type = checkpoint["feature_type"]
 
             # Load existing model
-            model = BowelSoundCNN(
-                num_classes=len(le.classes_), input_shape=input_shape
-            ).to(device)
+            model = BowelSoundCNN(num_classes=len(le.classes_)).to(device)
 
             model.load_state_dict(checkpoint["state_dict"])
 

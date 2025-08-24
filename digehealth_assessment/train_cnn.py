@@ -96,9 +96,7 @@ def main():
         # Define the CNN model
         # Derive input shape from a sample (C,H,W); width can vary
         sample_shape = train_dataset[0][0].shape
-        model = BowelSoundCNN(
-            num_classes=len(le.classes_), input_shape=sample_shape
-        ).to(device)
+        model = BowelSoundCNN(num_classes=len(le.classes_)).to(device)
 
         # Train the model
         train_losses, train_accuracies = train_cnn_model(
@@ -125,9 +123,7 @@ def main():
     else:
         # Load existing model
         sample_shape = train_dataset[0][0].shape
-        model = BowelSoundCNN(
-            num_classes=len(le.classes_), input_shape=sample_shape
-        ).to(device)
+        model = BowelSoundCNN(num_classes=len(le.classes_)).to(device)
         loaded_obj = torch.load(model_path, map_location=device, weights_only=False)
         if isinstance(loaded_obj, dict) and "state_dict" in loaded_obj:
             model.load_state_dict(loaded_obj["state_dict"])
