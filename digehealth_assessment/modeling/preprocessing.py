@@ -35,7 +35,7 @@ def extract_segments(wav_path, annotation_path):
 
 
 def extract_overlapping_segments(
-    wav_path, annotation_path, window_size_sec=0.5, window_overlap=0.5
+    wav_path, annotation_path, window_size_sec=0.3, window_overlap=0.5
 ):
     """Extracts overlapping segments from a WAV file based on annotations.
     Args:
@@ -46,6 +46,8 @@ def extract_overlapping_segments(
     Returns:
         segments (list): List of audio segments.
         labels (list): Corresponding labels for each segment.
+        times (list): Each item are the start times and end times of each segment in seconds.
+        sample_rate (int): Sample rate of the audio file.
     """
     y, sample_rate = load_and_normalize_wav(wav_path)
     annotations = load_annotations(annotation_path)
@@ -55,7 +57,7 @@ def extract_overlapping_segments(
     hop_length = int(window_overlap * window_size_sec * sample_rate)
     segments = []
     labels = []
-
+    times = []
     # Iterate over the audio signal with the specified hop length
     for start in range(0, n_samples - win_length + 1, hop_length):
         seg_start_time = start / sample_rate
@@ -100,28 +102,8 @@ def extract_overlapping_segments(
         # Append the segment and its label
         segments.append(segment)
         labels.append(label)
-    return segments, labels
-
-
-def extract_overlapping_windows(wav_path, window_size_sec=0.5, window_overlap=0.75):
-    """Extract overlapping fixed-size windows and their [start,end] times from audio.
-
-    This does not require annotations and is suitable for inference.
-    Returns:
-        segments (list[np.ndarray]), times (list[tuple[float,float]]), sample_rate (int), hop_sec (float)
-    """
-    y, sample_rate = load_and_normalize_wav(wav_path)
-    n_samples = len(y)
-    win_length = int(window_size_sec * sample_rate)
-    hop_length = int(window_overlap * window_size_sec * sample_rate)
-    segments = []
-    times = []
-    for start in range(0, max(0, n_samples - win_length + 1), hop_length):
-        segment = y[start : start + win_length]
-        segments.append(segment)
-        times.append((start / sample_rate, (start + win_length) / sample_rate))
-    hop_sec = hop_length / sample_rate
-    return segments, times, sample_rate, hop_sec
+        times.append([seg_start_time, seg_end_time])
+    return segments, labels, times, sample_rate
 
 
 def assign_window_labels_from_annotations(times, ann_df, known_classes):
@@ -131,8 +113,8 @@ def assign_window_labels_from_annotations(times, ann_df, known_classes):
     """
 
     labels = []
-    for s, e in times:
-        overlaps = ann_df[(ann_df["end"] > s) & (ann_df["start"] < e)].copy()
+    for start, end in times:
+        overlaps = ann_df[(ann_df["end"] > start) & (ann_df["start"] < end)].copy()
         if overlaps.empty:
             label = "silence"
         else:
@@ -149,7 +131,7 @@ def assign_window_labels_from_annotations(times, ann_df, known_classes):
                         return 1
                     return 0
 
-                seg_center = (s + e) / 2
+                seg_center = (start + end) / 2
                 centers = (overlaps["start"].values + overlaps["end"].values) / 2
                 prios = overlaps["label"].apply(_priority).values
                 best_prio = prios.max()
@@ -362,10 +344,10 @@ if __name__ == "__main__":
     wav_path = EXTERNAL_DATA_DIR / "Tech Test/AS_1.wav"
     annotation_path = EXTERNAL_DATA_DIR / "Tech Test/AS_1.txt"
 
-    # Load wave and read in sample rate
-    wav_y, sample_rate = load_and_normalize_wav(wav_path)
-
-    segments, labels = extract_overlapping_segments(wav_path, annotation_path)
+    # Load wave and annotations, extract segments
+    segments, labels, times, sample_rate = extract_overlapping_segments(
+        wav_path, annotation_path
+    )
     n_labels_to_print = 10
     print(
         f"Extracted {len(segments)} segments , the first {n_labels_to_print}: {labels[:n_labels_to_print]}"

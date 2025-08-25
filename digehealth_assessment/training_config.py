@@ -7,11 +7,11 @@ from utils.config import EXTERNAL_DATA_DIR
 DEFAULT_FILE_PAIRS = [
     (
         EXTERNAL_DATA_DIR / "Tech Test" / "AS_1.wav",
-        EXTERNAL_DATA_DIR / "Tech Test" / "AS_1.txt",
+        EXTERNAL_DATA_DIR / "Tech Test" / "AS_1_cleaned.txt",
     ),
     (
         EXTERNAL_DATA_DIR / "Tech Test" / "23M74M.wav",
-        EXTERNAL_DATA_DIR / "Tech Test" / "23M74M.txt",
+        EXTERNAL_DATA_DIR / "Tech Test" / "23M74M_cleaned.txt",
     ),
 ]
 
@@ -25,7 +25,7 @@ DEFAULT_WINDOW_OVERLAP = 0.5
 # Training parameters
 DEFAULT_TEST_FRACTION = 0.2
 DEFAULT_ENSURE_LABEL_COVERAGE = True
-DEFAULT_RETRAIN_MODEL = True
+DEFAULT_RETRAIN_MODEL = False
 
 # CNN specific parameters
 DEFAULT_CNN_EPOCHS = 20

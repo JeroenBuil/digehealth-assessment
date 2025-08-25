@@ -72,7 +72,7 @@ def _plot_events_section(
         )  # very light grey for predicted silence
 
     fig, axes = plt.subplots(
-        2, 1, figsize=(14, 3.6), sharex=True, constrained_layout=False
+        2, 1, figsize=(8, 3), sharex=True, constrained_layout=False
     )
 
     # Top: Annotations (filled bands)

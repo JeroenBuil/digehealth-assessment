@@ -22,7 +22,7 @@ from modeling.preprocessing import (
     extract_fixed_size_mel_spectrogram,
     load_annotations,
     assign_window_labels_from_annotations,
-    extract_overlapping_windows,
+    extract_overlapping_segments,
 )
 from utils.model_utils import parse_window_from_model_name, align_classes_to_logits
 from utils.io import write_events_txt
@@ -154,7 +154,7 @@ def run_random_forest_inference(
 
 @app.command()
 def predict(
-    audio_path: Path = typer.Argument(..., help="Path to WAV file"),
+    wav_path: Path = typer.Argument(..., help="Path to WAV file"),
     model_path: Path = typer.Option(
         MODELS_DIR / "bowel_sound_cnn_win1_overlap0.75.pth",
         help="Path to trained model checkpoint",
@@ -176,8 +176,11 @@ def predict(
 
     # Segment audio using the same parameters
     logger.info("Segmenting audio...")
-    segments, times, sample_rate, hop_sec = extract_overlapping_windows(
-        audio_path, window_size_sec=window_size_sec, window_overlap=window_overlap
+    segments, labels, times, sample_rate = extract_overlapping_segments(
+        wav_path=wav_path,
+        annotation_path=annotation_path,
+        window_size_sec=window_size_sec,
+        window_overlap=window_overlap,
     )
 
     # Run inference based on model type
@@ -253,7 +256,7 @@ if __name__ == "__main__":
     """This function is used to test the model on a single audio file."""
     # Select default audio and model paths
     default_audio = EXTERNAL_DATA_DIR / "Tech Test" / "23M74M.wav"
-    default_ann = EXTERNAL_DATA_DIR / "Tech Test" / "23M74M.txt"
+    default_ann = EXTERNAL_DATA_DIR / "Tech Test" / "23M74M_cleaned.txt"
 
     # Available models
     model_files = list(MODELS_DIR.glob("*_cnn_*.pth"))
@@ -268,9 +271,9 @@ if __name__ == "__main__":
     print(f"\nSelected model: {default_model}")
 
     predict(
-        audio_path=default_audio,
-        model_path=default_model,
+        wav_path=default_audio,
         annotation_path=default_ann,
+        model_path=default_model,
         output_txt=PROCESSED_DATA_DIR
         / f"{default_audio.stem}_{default_model.stem}_predictions.txt",
     )

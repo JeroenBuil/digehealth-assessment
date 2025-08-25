@@ -34,8 +34,7 @@ def load_blocked_split_features(
     all_present_labels = set()
 
     for wav_path, ann_path in file_pairs:
-        wav_y, sample_rate = load_and_normalize_wav(wav_path)
-        segments, labels = extract_overlapping_segments(
+        segments, labels, times, sample_rate = extract_overlapping_segments(
             wav_path=wav_path,
             annotation_path=ann_path,
             window_size_sec=window_size_sec,

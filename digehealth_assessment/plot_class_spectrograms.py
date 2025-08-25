@@ -52,7 +52,7 @@ def plot_random_class_examples(
         print(f"Processing {wav_path.name}...")
 
         # Extract segments and labels
-        segments, labels = extract_overlapping_segments(
+        segments, labels, times, sample_rate = extract_overlapping_segments(
             wav_path,
             annotation_path,
             window_size_sec=window_size_sec,
@@ -215,11 +215,9 @@ def get_class_spectrograms(
         if not wav_path.exists() or not annotation_path.exists():
             continue
 
-        segments, labels = extract_overlapping_segments(
+        segments, labels, times, sample_rate = extract_overlapping_segments(
             wav_path, annotation_path, window_size_sec=window_size_sec
         )
-
-        _, sample_rate = load_and_normalize_wav(wav_path)
 
         for segment, label in zip(segments, labels):
             if len(segment) > 0:
